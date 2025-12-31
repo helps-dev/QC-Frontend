@@ -254,3 +254,227 @@ export const MASTERCHEF_ABI = [
     type: 'function'
   },
 ] as const
+
+
+// MonadStaking ABI - Stake MON/MONIC earn wMON
+export const MONAD_STAKING_ABI = [
+  // View functions
+  {
+    inputs: [],
+    name: 'poolLength',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '', type: 'uint256' }],
+    name: 'poolInfo',
+    outputs: [
+      { name: 'stakingToken', type: 'address' },
+      { name: 'totalStaked', type: 'uint256' },
+      { name: 'rewardPerSecond', type: 'uint256' },
+      { name: 'accRewardPerShare', type: 'uint256' },
+      { name: 'lastRewardTime', type: 'uint256' },
+      { name: 'isNative', type: 'bool' },
+      { name: 'isActive', type: 'bool' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '', type: 'uint256' }, { name: '', type: 'address' }],
+    name: 'userInfo',
+    outputs: [
+      { name: 'amount', type: 'uint256' },
+      { name: 'rewardDebt', type: 'uint256' },
+      { name: 'lockEndTime', type: 'uint256' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_poolId', type: 'uint256' }, { name: '_user', type: 'address' }],
+    name: 'pendingReward',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_poolId', type: 'uint256' }, { name: '_user', type: 'address' }],
+    name: 'getUserInfo',
+    outputs: [
+      { name: 'amount', type: 'uint256' },
+      { name: 'lockEndTime', type: 'uint256' },
+      { name: 'timeUntilUnlock', type: 'uint256' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_poolId', type: 'uint256' }, { name: '_user', type: 'address' }],
+    name: 'canWithdraw',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'rewardToken',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'LOCK_DURATION',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  // Write functions
+  {
+    inputs: [{ name: '_poolId', type: 'uint256' }, { name: '_amount', type: 'uint256' }],
+    name: 'deposit',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_poolId', type: 'uint256' }, { name: '_amount', type: 'uint256' }],
+    name: 'withdraw',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_poolId', type: 'uint256' }],
+    name: 'harvest',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_poolId', type: 'uint256' }],
+    name: 'emergencyWithdraw',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+] as const
+
+
+// MultiPoolStaking ABI - Stake gMONIC earn gMONIC
+export const MULTIPOOL_STAKING_ABI = [
+  // View functions
+  {
+    inputs: [],
+    name: 'poolLength',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '', type: 'uint256' }],
+    name: 'poolInfo',
+    outputs: [
+      { name: 'stakingToken', type: 'address' },
+      { name: 'allocPoint', type: 'uint256' },
+      { name: 'lastRewardBlock', type: 'uint256' },
+      { name: 'accRewardPerShare', type: 'uint256' },
+      { name: 'totalStaked', type: 'uint256' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '', type: 'uint256' }, { name: '', type: 'address' }],
+    name: 'userInfo',
+    outputs: [
+      { name: 'amount', type: 'uint256' },
+      { name: 'rewardDebt', type: 'uint256' },
+      { name: 'depositTime', type: 'uint256' },
+      { name: 'lastClaimTime', type: 'uint256' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_pid', type: 'uint256' }, { name: '_user', type: 'address' }],
+    name: 'pendingReward',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_pid', type: 'uint256' }, { name: '_user', type: 'address' }],
+    name: 'getUserInfoExtended',
+    outputs: [
+      { name: 'amount', type: 'uint256' },
+      { name: 'depositTime', type: 'uint256' },
+      { name: 'lastClaimTime', type: 'uint256' },
+      { name: 'canWithdraw', type: 'bool' },
+      { name: 'canClaim', type: 'bool' },
+      { name: 'timeUntilWithdraw', type: 'uint256' },
+      { name: 'timeUntilClaim', type: 'uint256' }
+    ],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'REWARD_TOKEN',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'rewardPerBlock',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'totalAllocPoint',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  {
+    inputs: [],
+    name: 'MIN_LOCK_PERIOD',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function'
+  },
+  // Write functions
+  {
+    inputs: [{ name: '_pid', type: 'uint256' }, { name: '_amount', type: 'uint256' }],
+    name: 'deposit',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_pid', type: 'uint256' }, { name: '_amount', type: 'uint256' }],
+    name: 'withdraw',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_pid', type: 'uint256' }],
+    name: 'claimReward',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+  {
+    inputs: [{ name: '_pid', type: 'uint256' }],
+    name: 'emergencyWithdraw',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function'
+  },
+] as const

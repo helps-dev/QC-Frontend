@@ -1,8 +1,11 @@
 import { defineChain } from 'viem'
 
+// Monad logo URL
+export const MONAD_LOGO = 'https://imagedelivery.net/cBNDGgkrsEA-b_ixIp9SkQ/MON.png/public'
+
 export const monadMainnet = defineChain({
   id: 143,
-  name: 'Monad Mainnet',
+  name: 'Monad',
   nativeCurrency: {
     decimals: 18,
     name: 'MON',
@@ -16,4 +19,5 @@ export const monadMainnet = defineChain({
   blockExplorers: {
     default: { name: 'MonadScan', url: 'https://monadscan.com' },
   },
+  iconUrl: MONAD_LOGO,
 })

@@ -1,0 +1,1 @@
+export { GmonicStakingPage } from './GmonicStakingPage'

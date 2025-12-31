@@ -1,15 +1,21 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseUnits, parseEther, formatUnits, formatEther } from 'viem'
-import { ChevronDown, ArrowDownUp, Info } from 'lucide-react'
-import { CONTRACTS, FEE } from '../config/contracts'
-import { ROUTER_ABI, ERC20_ABI, WMON_ABI } from '../config/abis'
-import { DEFAULT_TOKENS, NATIVE_ADDRESS, getStoredTokens, type Token } from '../config/tokens'
-import { TokenModal } from './TokenModal'
-import { TokenImportModal } from './TokenImportModal'
-import { TransactionSettings, type SwapSettings } from './TransactionSettings'
+import { ChevronDown, ArrowDownUp, Info, BarChart2 } from 'lucide-react'
+import { CONTRACTS, FEE } from '../../config/contracts'
+import { ROUTER_ABI, ERC20_ABI, WMON_ABI } from '../../config/abis'
+import { DEFAULT_TOKENS, NATIVE_ADDRESS, getStoredTokens, type Token } from '../../config/tokens'
+import { TokenModal } from '../TokenModal'
+import { TokenImportModal } from '../TokenImportModal'
+import { TransactionSettings, type SwapSettings } from '../TransactionSettings'
 
-export function SwapCard() {
+interface SwapCardWithChartToggleProps {
+  isChartVisible: boolean
+  onToggleChart: () => void
+  onTokenChange?: (tokenIn: Token, tokenOut: Token) => void
+}
+
+export function SwapCardWithChartToggle({ isChartVisible, onToggleChart, onTokenChange }: SwapCardWithChartToggleProps) {
   const { address, isConnected } = useAccount()
   const [tokenIn, setTokenIn] = useState<Token>(DEFAULT_TOKENS[0]) // MON
   const [tokenOut, setTokenOut] = useState<Token>(DEFAULT_TOKENS[2]) // QUICK
@@ -25,12 +31,18 @@ export function SwapCard() {
     setCustomTokens(getStoredTokens())
   }, [])
 
+  // Notify parent when tokens change
+  useEffect(() => {
+    if (onTokenChange) {
+      onTokenChange(tokenIn, tokenOut)
+    }
+  }, [tokenIn, tokenOut, onTokenChange])
+
   const isNativeIn = tokenIn.address === NATIVE_ADDRESS
   const isNativeOut = tokenOut.address === NATIVE_ADDRESS
   const isWmonIn = tokenIn.address.toLowerCase() === CONTRACTS.WMON.toLowerCase()
   const isWmonOut = tokenOut.address.toLowerCase() === CONTRACTS.WMON.toLowerCase()
   
-  // Check if this is a wrap (MON → WMON) or unwrap (WMON → MON) operation
   const isWrapOperation = isNativeIn && isWmonOut
   const isUnwrapOperation = isWmonIn && isNativeOut
   const isWrapOrUnwrap = isWrapOperation || isUnwrapOperation
@@ -50,8 +62,6 @@ export function SwapCard() {
     }
   }, [isSuccess, reset])
 
-  // For wrap/unwrap, output = input (1:1)
-  // For swaps, use router getAmountsOut
   const { data: amountsOut } = useReadContract({
     address: CONTRACTS.ROUTER,
     abi: ROUTER_ABI,
@@ -96,10 +106,8 @@ export function SwapCard() {
     query: { enabled: !!address && !isNativeIn && !isWrapOrUnwrap }
   })
 
-  // Update amountOut based on operation type
   useEffect(() => {
     if (isWrapOrUnwrap) {
-      // 1:1 for wrap/unwrap
       setAmountOut(amountIn || '')
     } else if (amountsOut) {
       setAmountOut(formatUnits(amountsOut[1], 18))
@@ -154,7 +162,6 @@ export function SwapCard() {
   const handleSwap = () => {
     if (!address || !amountIn || !amountOut) return
     
-    // Handle wrap/unwrap separately
     if (isWrapOperation) {
       handleWrap()
       return
@@ -234,10 +241,8 @@ export function SwapCard() {
     ? (parseFloat(amountOut) / parseFloat(amountIn)).toFixed(6) 
     : '0'
 
-  // Check if tokens are the same (but allow MON ↔ WMON)
   const isSameToken = !isWrapOrUnwrap && routeTokenIn === routeTokenOut
 
-  // Get button text
   const getButtonText = () => {
     if (isWrapOperation) return 'Wrap'
     if (isUnwrapOperation) return 'Unwrap'
@@ -246,12 +251,26 @@ export function SwapCard() {
 
   return (
     <div className="glass-card p-5">
-      {/* Header */}
+      {/* Header with Chart Toggle */}
       <div className="flex justify-between items-center mb-5">
         <h2 className="text-xl font-display font-bold text-white">
           {isWrapOperation ? 'Wrap' : isUnwrapOperation ? 'Unwrap' : 'Swap'}
         </h2>
-        <TransactionSettings settings={settings} onSettingsChange={setSettings} />
+        <div className="flex items-center gap-2">
+          <TransactionSettings settings={settings} onSettingsChange={setSettings} />
+          {/* Chart Toggle Button - Like Atlantis DEX */}
+          <button
+            onClick={onToggleChart}
+            className={`w-10 h-10 flex items-center justify-center rounded-xl border-2 transition-all ${
+              isChartVisible 
+                ? 'bg-primary-500/20 border-primary-500 text-primary-400' 
+                : 'bg-atlantis-800/50 border-atlantis-700/50 text-gray-400 hover:border-primary-500/50 hover:text-primary-400'
+            }`}
+            title={isChartVisible ? 'Hide Chart' : 'Show Chart'}
+          >
+            <BarChart2 className="w-5 h-5" />
+          </button>
+        </div>
       </div>
       
       <div className="space-y-2">
@@ -351,7 +370,7 @@ export function SwapCard() {
           </div>
         )}
 
-        {/* Rate & Details (only for swaps) */}
+        {/* Rate & Details */}
         {!isWrapOrUnwrap && amountIn && amountOut && parseFloat(amountIn) > 0 && (
           <div className="mt-3">
             <button 
@@ -403,7 +422,7 @@ export function SwapCard() {
             <button
               onClick={handleApprove}
               disabled={isPending || isConfirming}
-              className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white transition-all shadow-lg hover:shadow-amber-500/25"
+              className="w-full py-4 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white transition-all shadow-lg hover:shadow-purple-500/25"
             >
               {isPending || isConfirming ? (
                 <span className="flex items-center justify-center gap-2">
@@ -418,7 +437,7 @@ export function SwapCard() {
             <button
               onClick={handleSwap}
               disabled={isPending || isConfirming || (!isWrapOrUnwrap && !amountOut)}
-              className="w-full py-4 bg-gradient-to-r from-primary-500 to-secondary-500 hover:from-primary-400 hover:to-secondary-400 disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white text-lg transition-all shadow-lg hover:shadow-primary-500/25"
+              className="w-full py-4 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white text-lg transition-all shadow-lg hover:shadow-purple-500/25"
             >
               {isPending || isConfirming ? (
                 <span className="flex items-center justify-center gap-2">

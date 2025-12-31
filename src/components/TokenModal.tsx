@@ -58,9 +58,13 @@ function TokenItem({ token, onSelect }: { token: Token; onSelect: (token: Token)
         className="w-full flex items-center gap-3 p-3 hover:bg-atlantis-700/50 rounded-xl transition-all"
       >
         {/* Token Icon */}
-        <div className="w-10 h-10 bg-gradient-to-br from-primary-500/30 to-secondary-500/30 rounded-full flex items-center justify-center border border-atlantis-600/50 shrink-0">
-          <span className="text-sm font-bold text-white">{token.symbol.slice(0, 2)}</span>
-        </div>
+        {token.logoURI ? (
+          <img src={token.logoURI} alt={token.symbol} className="w-10 h-10 rounded-full shrink-0" />
+        ) : (
+          <div className="w-10 h-10 bg-gradient-to-br from-primary-500/30 to-secondary-500/30 rounded-full flex items-center justify-center border border-atlantis-600/50 shrink-0">
+            <span className="text-sm font-bold text-white">{token.symbol.slice(0, 2)}</span>
+          </div>
+        )}
         
         {/* Token Info */}
         <div className="text-left flex-1 min-w-0">
@@ -268,9 +272,13 @@ export function TokenModal({ onSelect, onClose, onImport, excludeToken }: TokenM
                 onClick={() => onSelect(token)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-atlantis-800/50 hover:bg-atlantis-700/50 border border-atlantis-600/30 hover:border-primary-500/30 rounded-lg transition-all"
               >
-                <div className="w-5 h-5 bg-gradient-to-br from-primary-500/30 to-secondary-500/30 rounded-full flex items-center justify-center">
-                  <span className="text-[8px] font-bold">{token.symbol.slice(0, 1)}</span>
-                </div>
+                {token.logoURI ? (
+                  <img src={token.logoURI} alt={token.symbol} className="w-5 h-5 rounded-full" />
+                ) : (
+                  <div className="w-5 h-5 bg-gradient-to-br from-primary-500/30 to-secondary-500/30 rounded-full flex items-center justify-center">
+                    <span className="text-[8px] font-bold">{token.symbol.slice(0, 1)}</span>
+                  </div>
+                )}
                 <span className="text-sm font-medium text-white">{token.symbol}</span>
               </button>
             ))}
@@ -319,7 +327,7 @@ export function TokenModal({ onSelect, onClose, onImport, excludeToken }: TokenM
               </div>
               <button
                 onClick={handleImportAddressToken}
-                className="w-full py-2 bg-gradient-to-r from-primary-500 to-secondary-500 hover:from-primary-400 hover:to-secondary-400 rounded-lg text-white font-medium text-sm transition-all"
+                className="w-full py-2 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 rounded-lg text-white font-medium text-sm transition-all"
               >
                 Import & Select
               </button>
