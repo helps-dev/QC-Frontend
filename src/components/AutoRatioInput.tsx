@@ -1,7 +1,7 @@
 // components/AutoRatioInput.tsx
 // Auto-ratio calculator component for liquidity
 import { useState, useEffect } from 'react'
-import { Lock, Unlock, RefreshCw, AlertTriangle, Info } from 'lucide-react'
+import { Lock, Unlock, RefreshCw, AlertTriangle, Info } from './Icons3D'
 import { usePoolRatio } from '../hooks/usePoolRatio'
 import { type Token } from '../config/tokens'
 

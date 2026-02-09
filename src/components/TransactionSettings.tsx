@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Settings, X } from 'lucide-react'
+import { Settings, X } from './Icons3D'
 
 export interface SwapSettings {
   slippage: number

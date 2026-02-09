@@ -1,14 +1,13 @@
 import { useState, useCallback } from 'react'
-import { useAccount, usePublicClient, useWalletClient, useReadContract } from 'wagmi'
+import { useAccount, usePublicClient, useWalletClient, useReadContract, useChainId } from 'wagmi'
 import { parseUnits, formatUnits, type Address } from 'viem'
-
-// Contract Addresses
-export const IDO_FACTORY_ADDRESS = '0x08CE05Ea572d72c2E221DE63bD2f31b550E3Cd88' as Address
-export const TIER_STAKING_ADDRESS = '0x0D2e15c7b637F59E8D01ED5Ae4DEf1390D45f644' as Address
+import { getContracts } from '../config/contracts'
+import { CHAIN_IDS } from '../config/chains'
 
 // ABIs
 export const IDO_FACTORY_ABI = [
   { inputs: [], name: 'creationFeeMON', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'creationFeeETH', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'platformFee', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'getTotalIDOs', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [], name: 'getAllIDOs', outputs: [{ components: [
@@ -52,7 +51,8 @@ export const IDO_FACTORY_ABI = [
   ], name: 'createIDO', outputs: [{ type: 'address' }], stateMutability: 'payable', type: 'function' },
 ] as const
 
-export const IDO_POOL_ABI = [
+// Monad IDO Pool ABI (uses MON naming)
+export const IDO_POOL_ABI_MONAD = [
   { inputs: [], name: 'getPoolInfo', outputs: [
     { name: '_name', type: 'string' }, { name: '_poolType', type: 'uint8' },
     { name: '_status', type: 'uint8' }, { name: '_hardCapMON', type: 'uint256' },
@@ -75,6 +75,39 @@ export const IDO_POOL_ABI = [
   { inputs: [], name: 'claim', outputs: [], stateMutability: 'nonpayable', type: 'function' },
   { inputs: [], name: 'claimRefund', outputs: [], stateMutability: 'nonpayable', type: 'function' },
 ] as const
+
+// MegaETH IDO Pool ABI (uses ETH naming)
+export const IDO_POOL_ABI_MEGAETH = [
+  { inputs: [], name: 'getPoolInfo', outputs: [
+    { name: '_name', type: 'string' }, { name: '_poolType', type: 'uint8' },
+    { name: '_status', type: 'uint8' }, { name: '_hardCapETH', type: 'uint256' },
+    { name: '_softCapETH', type: 'uint256' }, { name: '_totalCommittedETH', type: 'uint256' },
+    { name: '_totalParticipants', type: 'uint256' }, { name: '_startTime', type: 'uint256' },
+    { name: '_endTime', type: 'uint256' }, { name: '_tokensForSale', type: 'uint256' },
+    { name: '_tokenPriceETH', type: 'uint256' }
+  ], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'getOverflowPercent', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: '_user', type: 'address' }], name: 'getUserInfo', outputs: [
+    { name: 'depositedETH', type: 'uint256' }, { name: 'allocation', type: 'uint256' },
+    { name: 'refundAmountETH', type: 'uint256' }, { name: 'claimedAmount', type: 'uint256' },
+    { name: 'claimable', type: 'uint256' }, { name: 'hasClaimedRefund', type: 'bool' }
+  ], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: '_user', type: 'address' }], name: 'estimateAllocation', outputs: [
+    { name: 'estimatedTokens', type: 'uint256' }, { name: 'estimatedRefundETH', type: 'uint256' }
+  ], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: '_amount', type: 'uint256' }], name: 'deposit', outputs: [], stateMutability: 'payable', type: 'function' },
+  { inputs: [], name: 'depositETH', outputs: [], stateMutability: 'payable', type: 'function' },
+  { inputs: [], name: 'claim', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+  { inputs: [], name: 'claimRefund', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+] as const
+
+// Dynamic ABI selector based on chain
+export function getIDOPoolABI(chainId: number) {
+  return chainId === CHAIN_IDS.MEGAETH ? IDO_POOL_ABI_MEGAETH : IDO_POOL_ABI_MONAD
+}
+
+// Legacy export for backward compatibility
+export const IDO_POOL_ABI = IDO_POOL_ABI_MONAD
 
 export const TIER_STAKING_ABI = [
   { inputs: [{ name: '_user', type: 'address' }], name: 'getUserTier', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
@@ -156,6 +189,8 @@ export function parseIDOInfo(raw: readonly unknown[]): IDOInfo {
 // Hook for IDO Factory
 export function useIDOFactory() {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
   const publicClient = usePublicClient()
   const { data: walletClient } = useWalletClient()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -163,11 +198,12 @@ export function useIDOFactory() {
   const [txHash, setTxHash] = useState<string | null>(null)
 
   const { data: creationFee } = useReadContract({
-    address: IDO_FACTORY_ADDRESS, abi: IDO_FACTORY_ABI, functionName: 'creationFeeMON'
+    address: contracts.IDO_FACTORY, abi: IDO_FACTORY_ABI,
+    functionName: chainId === CHAIN_IDS.MEGAETH ? 'creationFeeETH' : 'creationFeeMON'
   })
 
   const { data: platformFee } = useReadContract({
-    address: IDO_FACTORY_ADDRESS, abi: IDO_FACTORY_ABI, functionName: 'platformFee'
+    address: contracts.IDO_FACTORY, abi: IDO_FACTORY_ABI, functionName: 'platformFee'
   })
 
   const waitForTx = useCallback(async (hash: `0x${string}`): Promise<boolean> => {
@@ -194,10 +230,10 @@ export function useIDOFactory() {
     try {
       const gasPrice = await publicClient.getGasPrice()
       const hash = await walletClient.writeContract({
-        address: IDO_FACTORY_ADDRESS, abi: IDO_FACTORY_ABI, functionName: 'createIDO',
+        address: contracts.IDO_FACTORY, abi: IDO_FACTORY_ABI, functionName: 'createIDO',
         args: [
           params.name, params.saleToken as Address,
-          '0x0000000000000000000000000000000000000000' as Address, // Native MON
+          '0x0000000000000000000000000000000000000000' as Address, // Native token (MON/ETH)
           parseUnits(params.hardCap, 18), parseUnits(params.softCap, 18),
           parseUnits(params.tokensForSale, 18),
           BigInt(params.startTime), BigInt(params.endTime),
@@ -214,7 +250,7 @@ export function useIDOFactory() {
       setStatusMessage(`❌ ${err?.shortMessage || err?.message || 'Failed'}`); setIsProcessing(false)
       return { success: false }
     }
-  }, [walletClient, address, publicClient, creationFee, waitForTx])
+  }, [walletClient, address, publicClient, creationFee, waitForTx, contracts.IDO_FACTORY])
 
   const reset = useCallback(() => { setStatusMessage(''); setTxHash(null); setIsProcessing(false) }, [])
 
@@ -228,6 +264,7 @@ export function useIDOFactory() {
 // Hook for IDO Pool interactions
 export function useIDOPool(poolAddress: Address | undefined) {
   const { address } = useAccount()
+  const chainId = useChainId()
   const publicClient = usePublicClient()
   const { data: walletClient } = useWalletClient()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -255,8 +292,11 @@ export function useIDOPool(poolAddress: Address | undefined) {
     try {
       const amountWei = parseUnits(amount, 18)
       const gasPrice = await publicClient.getGasPrice()
+      // Use chain-specific deposit function: depositETH for MegaETH, depositMON for Monad
+      const poolABI = getIDOPoolABI(chainId)
+      const depositFn = chainId === CHAIN_IDS.MEGAETH ? 'depositETH' : 'depositMON'
       const hash = await walletClient.writeContract({
-        address: poolAddress, abi: IDO_POOL_ABI, functionName: 'depositMON',
+        address: poolAddress, abi: poolABI, functionName: depositFn,
         value: amountWei, gas: 300_000n, gasPrice: (gasPrice * 130n) / 100n
       })
       setTxHash(hash); setStatusMessage('⏳ Confirming...')
@@ -277,8 +317,9 @@ export function useIDOPool(poolAddress: Address | undefined) {
     setIsProcessing(true); setStatusMessage('📝 Confirm claim...')
     try {
       const gasPrice = await publicClient.getGasPrice()
+      const poolABI = getIDOPoolABI(chainId)
       const hash = await walletClient.writeContract({
-        address: poolAddress, abi: IDO_POOL_ABI, functionName: 'claim',
+        address: poolAddress, abi: poolABI, functionName: 'claim',
         gas: 200_000n, gasPrice: (gasPrice * 130n) / 100n
       })
       setTxHash(hash); setStatusMessage('⏳ Confirming...')
@@ -299,8 +340,9 @@ export function useIDOPool(poolAddress: Address | undefined) {
     setIsProcessing(true); setStatusMessage('📝 Confirm refund...')
     try {
       const gasPrice = await publicClient.getGasPrice()
+      const poolABI = getIDOPoolABI(chainId)
       const hash = await walletClient.writeContract({
-        address: poolAddress, abi: IDO_POOL_ABI, functionName: 'claimRefund',
+        address: poolAddress, abi: poolABI, functionName: 'claimRefund',
         gas: 200_000n, gasPrice: (gasPrice * 130n) / 100n
       })
       setTxHash(hash); setStatusMessage('⏳ Confirming...')
@@ -322,6 +364,8 @@ export function useIDOPool(poolAddress: Address | undefined) {
 // Hook for Tier Staking
 export function useTierStaking() {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
   const publicClient = usePublicClient()
   const { data: walletClient } = useWalletClient()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -329,12 +373,12 @@ export function useTierStaking() {
   const [txHash, setTxHash] = useState<string | null>(null)
 
   const { data: userTier } = useReadContract({
-    address: TIER_STAKING_ADDRESS, abi: TIER_STAKING_ABI, functionName: 'getUserTier',
+    address: contracts.TIER_STAKING, abi: TIER_STAKING_ABI, functionName: 'getUserTier',
     args: address ? [address] : undefined, query: { enabled: !!address }
   })
 
   const { data: totalStaked } = useReadContract({
-    address: TIER_STAKING_ADDRESS, abi: TIER_STAKING_ABI, functionName: 'totalStaked'
+    address: contracts.TIER_STAKING, abi: TIER_STAKING_ABI, functionName: 'totalStaked'
   })
 
   const waitForTx = useCallback(async (hash: `0x${string}`): Promise<boolean> => {
@@ -359,7 +403,7 @@ export function useTierStaking() {
       const amountWei = parseUnits(amount, 18)
       const gasPrice = await publicClient.getGasPrice()
       const hash = await walletClient.writeContract({
-        address: TIER_STAKING_ADDRESS, abi: TIER_STAKING_ABI, functionName: 'stake',
+        address: contracts.TIER_STAKING, abi: TIER_STAKING_ABI, functionName: 'stake',
         args: [amountWei], gas: 300_000n, gasPrice: (gasPrice * 130n) / 100n
       })
       setTxHash(hash); setStatusMessage('⏳ Confirming...')
@@ -371,7 +415,7 @@ export function useTierStaking() {
       setStatusMessage(`❌ ${err?.shortMessage || err?.message || 'Failed'}`); setIsProcessing(false)
       return { success: false }
     }
-  }, [walletClient, address, publicClient, waitForTx])
+  }, [walletClient, address, publicClient, waitForTx, contracts.TIER_STAKING])
 
   const unstake = useCallback(async (amount: string) => {
     if (!walletClient || !address || !publicClient) {
@@ -382,7 +426,7 @@ export function useTierStaking() {
       const amountWei = parseUnits(amount, 18)
       const gasPrice = await publicClient.getGasPrice()
       const hash = await walletClient.writeContract({
-        address: TIER_STAKING_ADDRESS, abi: TIER_STAKING_ABI, functionName: 'unstake',
+        address: contracts.TIER_STAKING, abi: TIER_STAKING_ABI, functionName: 'unstake',
         args: [amountWei], gas: 300_000n, gasPrice: (gasPrice * 130n) / 100n
       })
       setTxHash(hash); setStatusMessage('⏳ Confirming...')
@@ -394,7 +438,7 @@ export function useTierStaking() {
       setStatusMessage(`❌ ${err?.shortMessage || err?.message || 'Failed'}`); setIsProcessing(false)
       return { success: false }
     }
-  }, [walletClient, address, publicClient, waitForTx])
+  }, [walletClient, address, publicClient, waitForTx, contracts.TIER_STAKING])
 
   const reset = useCallback(() => { setStatusMessage(''); setTxHash(null); setIsProcessing(false) }, [])
 

@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { useAccount, useReadContract } from 'wagmi'
+import { useAccount, useReadContract, useChainId } from 'wagmi'
 import { formatUnits } from 'viem'
 import { MASTERCHEF_CONFIG, MasterChefVersion } from '../config/masterchef'
-import { SUBGRAPH_URL } from '../config/contracts'
+import { getSubgraphUrl } from '../config/contracts'
 import { ERC20_ABI, MASTERCHEF_ABI } from '../config/abis'
 
 // Extended MasterChef ABI for userInfo
@@ -46,8 +46,8 @@ const MASTERCHEF_EXTENDED_ABI = [
   },
 ] as const
 
-async function querySubgraph(query: string) {
-  const response = await fetch(SUBGRAPH_URL, {
+async function querySubgraph(query: string, subgraphUrl: string) {
+  const response = await fetch(subgraphUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -79,11 +79,13 @@ export interface FarmPoolData {
 
 export function useFarmPools(version: MasterChefVersion) {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const subgraphUrl = getSubgraphUrl(chainId)
   const config = MASTERCHEF_CONFIG[version]
   
   // Get pool data from subgraph
   const { data: subgraphData } = useQuery({
-    queryKey: ['farmPools', version],
+    queryKey: ['farmPools', version, chainId],
     queryFn: async () => {
       const data = await querySubgraph(`{
         pairs(where: { id: "${config.pools[0].lpToken.toLowerCase()}" }) {
@@ -94,7 +96,7 @@ export function useFarmPools(version: MasterChefVersion) {
           token0Price
           token1Price
         }
-      }`)
+      }`, subgraphUrl)
       return data?.pairs?.[0] || null
     },
     refetchInterval: 15000,

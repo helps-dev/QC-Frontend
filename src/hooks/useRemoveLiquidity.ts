@@ -1,5 +1,5 @@
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
-import { CONTRACTS } from '../config/contracts'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useChainId } from 'wagmi'
+import { getContracts } from '../config/contracts'
 import { ROUTER_ABI } from '../config/abis'
 
 interface UseRemoveLiquidityResult {
@@ -9,7 +9,7 @@ interface UseRemoveLiquidityResult {
     token1Address: `0x${string}`,
     minAmount0: bigint,
     minAmount1: bigint,
-    hasWMON: boolean
+    hasWrappedNative: boolean
   ) => Promise<void>
   isLoading: boolean
   isSuccess: boolean
@@ -19,12 +19,14 @@ interface UseRemoveLiquidityResult {
 }
 
 /**
- * Hook to remove liquidity - handles both standard and ETH pairs
- * Automatically uses removeLiquidityETH when one token is WMON
+ * Hook to remove liquidity - handles both standard and ETH/native pairs
+ * Automatically uses removeLiquidityETH when one token is wrapped native
  */
 export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityResult {
   const { address } = useAccount()
   const publicClient = usePublicClient()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
 
   const {
     writeContract,
@@ -42,7 +44,7 @@ export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityRes
     token1Address: `0x${string}`,
     minAmount0: bigint,
     minAmount1: bigint,
-    hasWMON: boolean
+    hasWrappedNative: boolean
   ) => {
     if (!address || !publicClient) {
       throw new Error('Wallet not connected')
@@ -57,16 +59,16 @@ export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityRes
     const minOut0 = (minAmount0 * slippageMultiplier) / 100n
     const minOut1 = (minAmount1 * slippageMultiplier) / 100n
 
-    if (hasWMON) {
-      // Use removeLiquidityETH to get native MON back
-      const isToken0WMON = token0Address.toLowerCase() === CONTRACTS.WMON.toLowerCase()
-      const tokenAddress = isToken0WMON ? token1Address : token0Address
-      const minTokenAmount = isToken0WMON ? minOut1 : minOut0
-      const minETHAmount = isToken0WMON ? minOut0 : minOut1
+    if (hasWrappedNative) {
+      // Use removeLiquidityETH to get native token back
+      const isToken0Wrapped = token0Address.toLowerCase() === contracts.WETH.toLowerCase()
+      const tokenAddress = isToken0Wrapped ? token1Address : token0Address
+      const minTokenAmount = isToken0Wrapped ? minOut1 : minOut0
+      const minETHAmount = isToken0Wrapped ? minOut0 : minOut1
 
       try {
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidityETH',
           args: [tokenAddress, lpAmount, minTokenAmount, minETHAmount, address, deadline],
@@ -74,7 +76,7 @@ export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityRes
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidityETH',
           args: [tokenAddress, lpAmount, minTokenAmount, minETHAmount, address, deadline],
@@ -82,7 +84,7 @@ export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityRes
         })
       } catch (err) {
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidityETH',
           args: [tokenAddress, lpAmount, minTokenAmount, minETHAmount, address, deadline],
@@ -92,7 +94,7 @@ export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityRes
       // Standard removeLiquidity for ERC20 pairs
       try {
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidity',
           args: [token0Address, token1Address, lpAmount, minOut0, minOut1, address, deadline],
@@ -100,7 +102,7 @@ export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityRes
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidity',
           args: [token0Address, token1Address, lpAmount, minOut0, minOut1, address, deadline],
@@ -108,7 +110,7 @@ export function useRemoveLiquidity(slippage: number = 10): UseRemoveLiquidityRes
         })
       } catch (err) {
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidity',
           args: [token0Address, token1Address, lpAmount, minOut0, minOut1, address, deadline],

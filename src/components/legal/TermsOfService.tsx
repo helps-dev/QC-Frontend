@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from '../Icons3D'
 
 interface TermsOfServiceProps {
   onBack: () => void
@@ -23,7 +23,7 @@ export function TermsOfService({ onBack }: TermsOfServiceProps) {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">1. Acceptance of Terms</h2>
             <p>
-              By accessing and using Monic DEX ("the Platform"), you agree to be bound by these Terms of Service. 
+              By accessing and using Mexa DEX ("the Platform"), you agree to be bound by these Terms of Service. 
               If you do not agree to these terms, please do not use the Platform.
             </p>
           </section>
@@ -31,7 +31,7 @@ export function TermsOfService({ onBack }: TermsOfServiceProps) {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">2. Description of Service</h2>
             <p>
-              Monic DEX is a decentralized exchange (DEX) built on the Monad blockchain. The Platform provides:
+              Mexa DEX is a decentralized exchange (DEX) built on the MegaETH blockchain. The Platform provides:
             </p>
             <ul className="list-disc list-inside mt-2 space-y-1 ml-4">
               <li>Token swapping services</li>
@@ -96,7 +96,7 @@ export function TermsOfService({ onBack }: TermsOfServiceProps) {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">8. Fees</h2>
             <p>
-              The Platform charges a 0.3% fee on swaps, which is distributed to liquidity providers. 
+              The Platform charges a 0.5% fee on swaps, which is distributed to liquidity providers. 
               Additional network (gas) fees are required for blockchain transactions and are paid 
               directly to network validators.
             </p>
@@ -105,7 +105,7 @@ export function TermsOfService({ onBack }: TermsOfServiceProps) {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">9. Limitation of Liability</h2>
             <p>
-              To the maximum extent permitted by law, Monic DEX and its operators shall not be liable 
+              To the maximum extent permitted by law, Mexa DEX and its operators shall not be liable 
               for any indirect, incidental, special, consequential, or punitive damages, including 
               loss of profits, data, or other intangible losses.
             </p>

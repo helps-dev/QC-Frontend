@@ -1,6 +1,6 @@
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi'
 import { parseUnits } from 'viem'
-import { CONTRACTS } from '../config/contracts'
+import { getContracts } from '../config/contracts'
 import { ERC20_ABI } from '../config/abis'
 import { NATIVE_ADDRESS } from '../config/tokens'
 
@@ -24,9 +24,12 @@ export function useApproval(
   tokenAddress: `0x${string}` | undefined,
   amount: string,
   decimals: number = 18,
-  spender: `0x${string}` = CONTRACTS.ROUTER
+  spender?: `0x${string}`
 ): UseApprovalResult {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  const effectiveSpender = spender || contracts.ROUTER
 
   // Native tokens don't need approval
   const isNative = tokenAddress === NATIVE_ADDRESS || !tokenAddress
@@ -39,7 +42,7 @@ export function useApproval(
     address: tokenAddress,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, spender] : undefined,
+    args: address ? [address, effectiveSpender] : undefined,
     query: { enabled: !!address && !!tokenAddress && !isNative },
   })
 
@@ -71,7 +74,7 @@ export function useApproval(
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [spender, parseUnits('999999999999', decimals)], // Max approval
+      args: [effectiveSpender, parseUnits('999999999999', decimals)], // Max approval
     })
   }
 
@@ -91,9 +94,12 @@ export function useApproval(
 export function useLPApproval(
   lpTokenAddress: `0x${string}` | undefined,
   amount: bigint,
-  spender: `0x${string}` = CONTRACTS.ROUTER
+  spender?: `0x${string}`
 ): UseApprovalResult {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  const effectiveSpender = spender || contracts.ROUTER
 
   // Get current allowance
   const {
@@ -103,7 +109,7 @@ export function useLPApproval(
     address: lpTokenAddress,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, spender] : undefined,
+    args: address ? [address, effectiveSpender] : undefined,
     query: { enabled: !!address && !!lpTokenAddress },
   })
 
@@ -129,7 +135,7 @@ export function useLPApproval(
       address: lpTokenAddress,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [spender, parseUnits('999999999999', 18)],
+      args: [effectiveSpender, parseUnits('999999999999', 18)],
     })
   }
 

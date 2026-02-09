@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { TrendingUp, Zap, DollarSign, ArrowRight, Calculator } from 'lucide-react'
+import { TrendingUp, Zap, DollarSign, ArrowRight, Calculator } from '../Icons3D'
 import { useROICalculatorStore } from '../../store/calculatorStore'
 
 const DURATIONS = [

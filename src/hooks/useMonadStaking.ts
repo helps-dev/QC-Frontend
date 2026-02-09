@@ -1,7 +1,8 @@
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi'
 import { parseEther, formatEther } from 'viem'
-import { CONTRACTS } from '../config/contracts'
+import { getContracts } from '../config/contracts'
 import { MONAD_STAKING_ABI, ERC20_ABI } from '../config/abis'
+import { getNativeSymbol } from '../config/chains'
 
 export interface PoolInfo {
   poolId: number
@@ -22,12 +23,16 @@ export interface UserStakeInfo {
 
 export function useMonadStaking(poolId: number = 0) {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  const nativeSymbol = getNativeSymbol(chainId)
+  
   const { writeContract, data: hash, isPending } = useWriteContract()
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
 
   // Read pool info
   const { data: poolData, refetch: refetchPool } = useReadContract({
-    address: CONTRACTS.MONAD_STAKING,
+    address: contracts.NATIVE_STAKING,
     abi: MONAD_STAKING_ABI,
     functionName: 'poolInfo',
     args: [BigInt(poolId)],
@@ -35,7 +40,7 @@ export function useMonadStaking(poolId: number = 0) {
 
   // Read user info
   const { data: userInfoData, refetch: refetchUser } = useReadContract({
-    address: CONTRACTS.MONAD_STAKING,
+    address: contracts.NATIVE_STAKING,
     abi: MONAD_STAKING_ABI,
     functionName: 'getUserInfo',
     args: [BigInt(poolId), address!],
@@ -44,7 +49,7 @@ export function useMonadStaking(poolId: number = 0) {
 
   // Read pending reward
   const { data: pendingRewardData, refetch: refetchReward } = useReadContract({
-    address: CONTRACTS.MONAD_STAKING,
+    address: contracts.NATIVE_STAKING,
     abi: MONAD_STAKING_ABI,
     functionName: 'pendingReward',
     args: [BigInt(poolId), address!],
@@ -53,19 +58,19 @@ export function useMonadStaking(poolId: number = 0) {
 
   // Read can withdraw
   const { data: canWithdrawData } = useReadContract({
-    address: CONTRACTS.MONAD_STAKING,
+    address: contracts.NATIVE_STAKING,
     abi: MONAD_STAKING_ABI,
     functionName: 'canWithdraw',
     args: [BigInt(poolId), address!],
     query: { enabled: !!address }
   })
 
-  // Read wMON balance in contract (for reward availability)
+  // Read reward token balance in contract
   const { data: rewardBalance } = useReadContract({
-    address: CONTRACTS.WMON_REWARD,
+    address: contracts.NATIVE_REWARD,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
-    args: [CONTRACTS.MONAD_STAKING],
+    args: [contracts.NATIVE_STAKING],
   })
 
   // Parse pool info
@@ -87,12 +92,12 @@ export function useMonadStaking(poolId: number = 0) {
     canWithdraw: canWithdrawData || false,
   } : null
 
-  // Deposit native MON
-  const depositMON = async (amount: string) => {
+  // Deposit native token (MON or ETH)
+  const depositNative = async (amount: string) => {
     if (!poolInfo?.isNative) throw new Error('Not a native pool')
     const value = parseEther(amount)
     writeContract({
-      address: CONTRACTS.MONAD_STAKING,
+      address: contracts.NATIVE_STAKING,
       abi: MONAD_STAKING_ABI,
       functionName: 'deposit',
       args: [BigInt(poolId), 0n],
@@ -100,12 +105,15 @@ export function useMonadStaking(poolId: number = 0) {
     })
   }
 
+  // Alias for backward compatibility
+  const depositMON = depositNative
+
   // Deposit ERC20 token
   const depositToken = async (amount: string) => {
-    if (poolInfo?.isNative) throw new Error('Use depositMON for native pool')
+    if (poolInfo?.isNative) throw new Error('Use depositNative for native pool')
     const value = parseEther(amount)
     writeContract({
-      address: CONTRACTS.MONAD_STAKING,
+      address: contracts.NATIVE_STAKING,
       abi: MONAD_STAKING_ABI,
       functionName: 'deposit',
       args: [BigInt(poolId), value],
@@ -116,7 +124,7 @@ export function useMonadStaking(poolId: number = 0) {
   const withdraw = async (amount: string) => {
     const value = parseEther(amount)
     writeContract({
-      address: CONTRACTS.MONAD_STAKING,
+      address: contracts.NATIVE_STAKING,
       abi: MONAD_STAKING_ABI,
       functionName: 'withdraw',
       args: [BigInt(poolId), value],
@@ -126,7 +134,7 @@ export function useMonadStaking(poolId: number = 0) {
   // Harvest rewards
   const harvest = async () => {
     writeContract({
-      address: CONTRACTS.MONAD_STAKING,
+      address: contracts.NATIVE_STAKING,
       abi: MONAD_STAKING_ABI,
       functionName: 'harvest',
       args: [BigInt(poolId)],
@@ -136,7 +144,7 @@ export function useMonadStaking(poolId: number = 0) {
   // Emergency withdraw (no rewards)
   const emergencyWithdraw = async () => {
     writeContract({
-      address: CONTRACTS.MONAD_STAKING,
+      address: contracts.NATIVE_STAKING,
       abi: MONAD_STAKING_ABI,
       functionName: 'emergencyWithdraw',
       args: [BigInt(poolId)],
@@ -154,7 +162,10 @@ export function useMonadStaking(poolId: number = 0) {
     poolInfo,
     userInfo,
     rewardBalance,
-    depositMON,
+    nativeSymbol,
+    chainId,
+    depositNative,
+    depositMON, // backward compatibility
     depositToken,
     withdraw,
     harvest,
@@ -169,8 +180,11 @@ export function useMonadStaking(poolId: number = 0) {
 
 // Hook untuk mendapatkan semua pools
 export function useMonadStakingPools() {
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  
   const { data: poolLength } = useReadContract({
-    address: CONTRACTS.MONAD_STAKING,
+    address: contracts.NATIVE_STAKING,
     abi: MONAD_STAKING_ABI,
     functionName: 'poolLength',
   })

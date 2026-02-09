@@ -1,6 +1,6 @@
 import { useAccount, useBalance, useReadContract } from 'wagmi'
 import { formatUnits, formatEther } from 'viem'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown } from './Icons3D'
 import { ERC20_ABI } from '../config/abis'
 import { type Token, NATIVE_ADDRESS } from '../config/tokens'
 

@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react'
-import { X } from 'lucide-react'
+import { X } from '../Icons3D'
 import { useROICalculatorStore } from '../../store/calculatorStore'
 import { CalculatorView } from './CalculatorView'
 import { PoolDetailsView } from './PoolDetailsView'

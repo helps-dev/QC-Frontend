@@ -1,22 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useAccount } from 'wagmi'
+import { useAccount, useChainId } from 'wagmi'
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  Plus,
-  Wallet,
-  Layers,
-  RefreshCw,
-  Filter,
-  BarChart3,
-  Users,
-  DollarSign,
-  TrendingUp,
-  Search,
-  ChevronDown,
-} from 'lucide-react'
-import { SUBGRAPH_URL } from '../../config/contracts'
-import { PositionCard } from './PositionCard'
-import { PoolCard } from './PoolCard'
+import { Plus, Wallet, RefreshCw, Search, TrendingUp, Layers, ChevronDown, ChevronUp, ExternalLink } from '../Icons3D'
+import { getSubgraphUrl, MONAD_CONTRACTS, MEGAETH_CONTRACTS } from '../../config/contracts'
+import { CHAIN_IDS } from '../../config/chains'
 import { AddLiquidityModal } from './AddLiquidityModal'
 import { RemoveLiquidityModal } from './RemoveLiquidityModal'
 
@@ -39,25 +26,61 @@ export interface PositionData {
   liquidityTokenBalance: string
 }
 
-// Constants
-const WMON_ADDRESS = '0x3bd359c1119da7da1d913d1c4d2b7c461115433a'
-const MON_PRICE_USD = 0.5
-
-// Utility functions
-export function calculatePoolTVL(pool: PoolData): number {
-  const r0 = parseFloat(pool.reserve0) || 0
-  const r1 = parseFloat(pool.reserve1) || 0
-  if (pool.token0.id.toLowerCase() === WMON_ADDRESS) return r0 * 2 * MON_PRICE_USD
-  if (pool.token1.id.toLowerCase() === WMON_ADDRESS) return r1 * 2 * MON_PRICE_USD
-  return (r0 + r1) * MON_PRICE_USD * 0.01
+// Chain-specific WETH addresses
+const WETH_ADDRESSES: Record<number, string> = {
+  [CHAIN_IDS.MONAD]: MONAD_CONTRACTS.WETH.toLowerCase(),
+  [CHAIN_IDS.MEGAETH]: MEGAETH_CONTRACTS.WETH.toLowerCase(),
 }
 
-export function calculatePoolVolume(pool: PoolData): number {
+// Placeholder price (should be fetched from oracle in production)
+const NATIVE_PRICE_USD = 0.42
+const FEE_RATE = 0.005
+
+const TOKEN_LOGOS: Record<string, string> = {
+  'WMON': 'https://imagedelivery.net/cBNDGgkrsEA-b_ixIp9SkQ/MON.png/public',
+  'MON': 'https://imagedelivery.net/cBNDGgkrsEA-b_ixIp9SkQ/MON.png/public',
+  'WETH': 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2/logo.png',
+  'ETH': 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2/logo.png',
+  'USDC': 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
+  'MEXA': '/mexa-logo.png',
+  'MXA': '/mexa-logo.png',
+  'GMEXA': '/mexa-logo.png',
+}
+
+// Utility Functions
+export function getTokenLogo(symbol: string): string {
+  return TOKEN_LOGOS[symbol.toUpperCase()] || `https://ui-avatars.com/api/?name=${symbol.slice(0,2)}&background=06b6d4&color=fff&size=64&bold=true`
+}
+
+// Chain-aware TVL calculation
+export function calculatePoolTVL(pool: PoolData, chainId: number = CHAIN_IDS.MONAD): number {
+  const r0 = parseFloat(pool.reserve0) || 0
+  const r1 = parseFloat(pool.reserve1) || 0
+  const wethAddress = WETH_ADDRESSES[chainId] || WETH_ADDRESSES[CHAIN_IDS.MONAD]
+  
+  if (pool.token0.id.toLowerCase() === wethAddress) return r0 * 2 * NATIVE_PRICE_USD
+  if (pool.token1.id.toLowerCase() === wethAddress) return r1 * 2 * NATIVE_PRICE_USD
+  return (r0 + r1) * NATIVE_PRICE_USD * 0.01
+}
+
+// Chain-aware volume calculation
+export function calculatePoolVolume(pool: PoolData, chainId: number = CHAIN_IDS.MONAD): number {
   const v0 = parseFloat(pool.volumeToken0) || 0
   const v1 = parseFloat(pool.volumeToken1) || 0
-  if (pool.token0.id.toLowerCase() === WMON_ADDRESS) return v0 * MON_PRICE_USD
-  if (pool.token1.id.toLowerCase() === WMON_ADDRESS) return v1 * MON_PRICE_USD
-  return (v0 + v1) * MON_PRICE_USD * 0.01
+  const wethAddress = WETH_ADDRESSES[chainId] || WETH_ADDRESSES[CHAIN_IDS.MONAD]
+  
+  if (pool.token0.id.toLowerCase() === wethAddress) return v0 * NATIVE_PRICE_USD
+  if (pool.token1.id.toLowerCase() === wethAddress) return v1 * NATIVE_PRICE_USD
+  return (v0 + v1) * NATIVE_PRICE_USD * 0.01
+}
+
+export function calculateFees(volume: number): number {
+  return volume * FEE_RATE
+}
+
+export function calculateAPR(volume: number, tvl: number): number {
+  if (tvl <= 0) return 0
+  return (volume * FEE_RATE * 365) / tvl * 100
 }
 
 export function formatUSD(num: number): string {
@@ -67,450 +90,758 @@ export function formatUSD(num: number): string {
   return `$${num.toFixed(4)}`
 }
 
-type TabType = 'positions' | 'pools'
-type SortType = 'tvl' | 'volume' | 'apr' | 'fee'
+export function formatNumber(num: number): string {
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`
+  if (num >= 1_000) return `${(num / 1_000).toFixed(2)}K`
+  return num.toFixed(2)
+}
 
-// Stats Header Component - Responsive
-function StatsHeader({ pools }: { pools: PoolData[] }) {
-  const totalTVL = pools.reduce((acc, pool) => acc + calculatePoolTVL(pool), 0)
-  const totalVolume = pools.reduce((acc, pool) => acc + calculatePoolVolume(pool), 0)
-  const totalFees = totalVolume * 0.005
-  const totalLPs = pools.reduce((acc, pool) => acc + parseInt(pool.liquidityProviderCount || '0'), 0)
+type TabType = 'all' | 'myPositions'
+type SortField = 'tvl' | 'volume24h' | 'apr'
+type SortDirection = 'asc' | 'desc'
 
-  const stats = [
-    { label: 'TVL', fullLabel: 'Total Value Locked', value: formatUSD(totalTVL), icon: DollarSign, color: 'text-green-400', bg: 'from-green-500/10 to-emerald-500/10' },
-    { label: 'Volume', fullLabel: '24h Volume', value: formatUSD(totalVolume), icon: BarChart3, color: 'text-blue-400', bg: 'from-blue-500/10 to-cyan-500/10' },
-    { label: 'Fees', fullLabel: '24h Fees', value: formatUSD(totalFees), icon: TrendingUp, color: 'text-purple-400', bg: 'from-purple-500/10 to-pink-500/10' },
-    { label: 'LPs', fullLabel: 'LP Providers', value: totalLPs.toLocaleString(), icon: Users, color: 'text-orange-400', bg: 'from-orange-500/10 to-amber-500/10' },
-  ]
-
+// Token Icon Component
+function TokenIcon({ symbol, size = 28 }: { symbol: string; size?: number }) {
+  const [error, setError] = useState(false)
+  const logo = getTokenLogo(symbol)
+  
+  if (error) {
+    return (
+      <div
+        className="bg-gradient-to-br from-cyan-400 to-emerald-400 rounded-full flex items-center justify-center text-white font-bold border-2 border-slate-800"
+        style={{ width: size, height: size, fontSize: size * 0.35 }}
+      >
+        {symbol.slice(0, 2)}
+      </div>
+    )
+  }
+  
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
-      {stats.map((stat) => (
-        <div key={stat.label} className={`bg-gradient-to-br ${stat.bg} backdrop-blur-sm rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-white/5`}>
-          <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-2">
-            <stat.icon className={`w-3 h-3 sm:w-4 sm:h-4 ${stat.color}`} />
-            <span className="text-gray-400 text-[10px] sm:text-xs hidden sm:inline">{stat.fullLabel}</span>
-            <span className="text-gray-400 text-[10px] sm:hidden">{stat.label}</span>
-          </div>
-          <p className="text-white text-base sm:text-lg md:text-xl font-bold">{stat.value}</p>
-        </div>
-      ))}
+    <img 
+      src={logo} 
+      alt={symbol}
+      className="rounded-full border-2 border-slate-800 bg-slate-800"
+      style={{ width: size, height: size }}
+      onError={() => setError(true)}
+    />
+  )
+}
+
+// Token Pair Icons (overlapping)
+function TokenPair({ token0, token1, size = 28 }: { token0: string; token1: string; size?: number }) {
+  return (
+    <div className="flex items-center">
+      <TokenIcon symbol={token0} size={size} />
+      <div className="-ml-2">
+        <TokenIcon symbol={token1} size={size} />
+      </div>
     </div>
   )
 }
 
-// Filter Bar Component - Responsive
-function FilterBar({
-  activeTab,
-  setActiveTab,
-  sortBy,
-  setSortBy,
-  searchQuery,
-  setSearchQuery,
-  positionCount,
+// Stats Dashboard Component - 4 stat cards with cyan/emerald theme
+function StatsDashboard({ totalTVL, volume24h, fees24h, lpCount }: { 
+  totalTVL: number; volume24h: number; fees24h: number; lpCount: number 
+}) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900/80 to-indigo-900/40 border border-white/10 backdrop-blur-xl p-5 hover:border-cyan-400/40 hover:shadow-2xl hover:shadow-cyan-500/10 transition-all duration-300">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <p className="text-gray-400 text-xs font-medium uppercase tracking-wide mb-2">Total TVL</p>
+        <p className="text-white text-2xl md:text-3xl font-bold font-mono">{formatUSD(totalTVL)}</p>
+      </div>
+      <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900/80 to-indigo-900/40 border border-white/10 backdrop-blur-xl p-5 hover:border-cyan-400/40 hover:shadow-2xl hover:shadow-cyan-500/10 transition-all duration-300">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <p className="text-gray-400 text-xs font-medium uppercase tracking-wide mb-2">Volume 24H</p>
+        <p className="text-white text-2xl md:text-3xl font-bold font-mono">{formatUSD(volume24h)}</p>
+      </div>
+      <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900/80 to-indigo-900/40 border border-white/10 backdrop-blur-xl p-5 hover:border-cyan-400/40 hover:shadow-2xl hover:shadow-cyan-500/10 transition-all duration-300">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <p className="text-gray-400 text-xs font-medium uppercase tracking-wide mb-2">Fees 24H</p>
+        <p className="text-white text-2xl md:text-3xl font-bold font-mono">{formatUSD(fees24h)}</p>
+      </div>
+      <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900/80 to-indigo-900/40 border border-white/10 backdrop-blur-xl p-5 hover:border-cyan-400/40 hover:shadow-2xl hover:shadow-cyan-500/10 transition-all duration-300">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 to-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+        <p className="text-gray-400 text-xs font-medium uppercase tracking-wide mb-2">LP Providers</p>
+        <p className="text-white text-2xl md:text-3xl font-bold font-mono">{formatNumber(lpCount)}</p>
+      </div>
+    </div>
+  )
+}
+
+
+// Control Bar Component with cyan/emerald theme
+function ControlBar({ 
+  activeTab, onTabChange, searchQuery, onSearchChange, 
+  sortBy, onSortChange, onAddLiquidity, onRefresh, isRefreshing 
 }: {
   activeTab: TabType
-  setActiveTab: (tab: TabType) => void
-  sortBy: SortType
-  setSortBy: (sort: SortType) => void
+  onTabChange: (tab: TabType) => void
   searchQuery: string
-  setSearchQuery: (query: string) => void
-  positionCount: number
+  onSearchChange: (query: string) => void
+  sortBy: SortField
+  onSortChange: (field: SortField) => void
+  onAddLiquidity: () => void
+  onRefresh: () => void
+  isRefreshing: boolean
 }) {
   const [showSortDropdown, setShowSortDropdown] = useState(false)
-
-  const tabs = [
-    { id: 'pools' as TabType, label: 'All Pools', shortLabel: 'Pools', icon: Layers, count: null },
-    { id: 'positions' as TabType, label: 'My Positions', shortLabel: 'Positions', icon: Wallet, count: positionCount },
+  
+  const sortOptions: { value: SortField; label: string }[] = [
+    { value: 'tvl', label: 'TVL' },
+    { value: 'volume24h', label: 'Volume 24H' },
+    { value: 'apr', label: 'APR' },
   ]
-
-  const sortOptions = [
-    { id: 'tvl' as SortType, label: 'TVL' },
-    { id: 'volume' as SortType, label: 'Volume' },
-    { id: 'apr' as SortType, label: 'APR' },
-    { id: 'fee' as SortType, label: 'Fee' },
-  ]
-
+  
   return (
-    <div className="flex flex-col gap-3 sm:gap-4 mb-4 sm:mb-6">
-      {/* Tabs - Full width on mobile */}
-      <div className="flex gap-1 p-1 bg-atlantis-800/30 rounded-xl border border-atlantis-700/30 w-full">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg font-medium transition-all text-sm ${
-              activeTab === tab.id
-                ? 'bg-gradient-to-r from-primary-500/20 to-secondary-500/20 text-white border border-primary-500/30'
-                : 'text-gray-400 hover:text-white hover:bg-atlantis-700/30'
-            }`}
-          >
-            <tab.icon className="w-4 h-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
-            <span className="sm:hidden">{tab.shortLabel}</span>
-            {tab.count !== null && tab.count > 0 && (
-              <span className="px-1.5 py-0.5 bg-primary-500/20 text-primary-400 text-[10px] sm:text-xs rounded-full">
-                {tab.count}
-              </span>
-            )}
-          </button>
-        ))}
+    <div className="flex flex-col md:flex-row md:items-center gap-3 mb-6 bg-slate-800/50 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
+      {/* Tabs */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => onTabChange('all')}
+          className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            activeTab === 'all' 
+              ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/25' 
+              : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+          }`}
+        >
+          All Pools
+        </button>
+        <button
+          onClick={() => onTabChange('myPositions')}
+          className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            activeTab === 'myPositions' 
+              ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/25' 
+              : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+          }`}
+        >
+          My Positions
+        </button>
+        
+        {/* Add Liquidity Button */}
+        <button
+          onClick={onAddLiquidity}
+          className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white rounded-xl font-semibold text-sm shadow-lg shadow-emerald-500/25 transition-all active:scale-95"
+        >
+          <Plus className="w-4 h-4" />
+          Add Liquidity
+        </button>
       </div>
-
-      {/* Search & Sort Row */}
-      <div className="flex gap-2">
+      
+      {/* Search and Sort */}
+      <div className="flex items-center gap-3 md:ml-auto flex-wrap">
         {/* Search */}
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search pools..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 sm:py-2.5 bg-atlantis-800/30 border border-atlantis-700/30 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:border-primary-500/50"
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
           />
         </div>
-
+        
         {/* Sort Dropdown */}
         <div className="relative">
           <button
             onClick={() => setShowSortDropdown(!showSortDropdown)}
-            className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-atlantis-800/30 border border-atlantis-700/30 rounded-xl text-gray-400 hover:text-white transition-all min-h-[40px] sm:min-h-[44px]"
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-sm text-gray-300 hover:border-cyan-500/50 transition-colors"
           >
-            <Filter className="w-4 h-4" />
-            <span className="text-sm">{sortOptions.find(s => s.id === sortBy)?.label}</span>
-            <ChevronDown className={`w-3 h-3 sm:w-4 sm:h-4 transition-transform ${showSortDropdown ? 'rotate-180' : ''}`} />
+            Sort: {sortOptions.find(o => o.value === sortBy)?.label}
+            <ChevronDown className="w-4 h-4" />
           </button>
-
           {showSortDropdown && (
-            <>
-              {/* Backdrop for mobile */}
-              <div 
-                className="fixed inset-0 z-40 sm:hidden" 
-                onClick={() => setShowSortDropdown(false)}
-              />
-              <div className="absolute right-0 mt-2 w-36 sm:w-40 bg-atlantis-800 border border-atlantis-700 rounded-xl shadow-xl z-50 overflow-hidden">
-                {sortOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    onClick={() => {
-                      setSortBy(option.id)
-                      setShowSortDropdown(false)
-                    }}
-                    className={`w-full px-3 sm:px-4 py-2.5 text-left text-sm transition-all ${
-                      sortBy === option.id
-                        ? 'bg-primary-500/20 text-primary-400'
-                        : 'text-gray-400 hover:bg-atlantis-700/50 hover:text-white'
-                    }`}
-                  >
-                    Sort by {option.label}
-                  </button>
-                ))}
-              </div>
-            </>
+            <div className="absolute right-0 top-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-20 min-w-[150px] overflow-hidden">
+              {sortOptions.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => { onSortChange(option.value); setShowSortDropdown(false) }}
+                  className={`w-full px-4 py-3 text-left text-sm hover:bg-slate-700 transition-colors ${
+                    sortBy === option.value ? 'text-cyan-400 bg-slate-700/50' : 'text-gray-300'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
+        
+        {/* Refresh */}
+        <button 
+          onClick={onRefresh} 
+          disabled={isRefreshing} 
+          className="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl transition-colors"
+        >
+          <RefreshCw className={`w-4 h-4 text-gray-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+        </button>
       </div>
     </div>
   )
 }
 
+// Pool Row Component (expandable) with cyan/emerald theme
+function PoolRow({ 
+  pool, isExpanded, onExpand, onAddLiquidity, chainId 
+}: { 
+  pool: PoolData; isExpanded: boolean; onExpand: () => void; onAddLiquidity: () => void; chainId: number 
+}) {
+  const tvl = calculatePoolTVL(pool, chainId)
+  const volume = calculatePoolVolume(pool, chainId)
+  const volume24h = volume * 0.08
+  const volume7d = volume * 0.4
+  const apr = calculateAPR(volume24h, tvl)
+  const lpCount = parseInt(pool.liquidityProviderCount) || 0
+  
+  // Dynamic explorer URL based on chain
+  const explorerUrl = chainId === CHAIN_IDS.MEGAETH 
+    ? `https://megaeth.blockscout.com/address/${pool.id}`
+    : `https://testnet.monadexplorer.com/address/${pool.id}`
+  
+  const getAPRColor = (apr: number) => {
+    if (apr > 100) return 'text-emerald-400 font-bold'
+    if (apr > 20) return 'text-amber-400 font-bold'
+    return 'text-gray-300'
+  }
+  
+  return (
+    <>
+      {/* Main Row */}
+      <tr 
+        onClick={onExpand}
+        className="border-b border-white/5 hover:bg-slate-700/30 cursor-pointer transition-colors"
+      >
+        {/* Pool Name */}
+        <td className="py-4 px-4">
+          <div className="flex items-center gap-3">
+            <TokenPair token0={pool.token0.symbol} token1={pool.token1.symbol} size={36} />
+            <div>
+              <p className="text-white font-semibold">{pool.token0.symbol}/{pool.token1.symbol}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[10px] px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded-full font-medium">MexaSwap V2</span>
+                <span className="text-[10px] px-2 py-0.5 bg-slate-600/50 text-gray-400 rounded-full font-medium">0.5% Fee</span>
+              </div>
+            </div>
+          </div>
+        </td>
+        
+        {/* TVL */}
+        <td className="py-4 px-4 text-right">
+          <p className="text-white font-mono font-medium">{formatUSD(tvl)}</p>
+        </td>
+        
+        {/* Volume 24h */}
+        <td className="py-4 px-4 text-right hidden md:table-cell">
+          <p className="text-white font-mono">{formatUSD(volume24h)}</p>
+        </td>
+        
+        {/* Volume 7D */}
+        <td className="py-4 px-4 text-right hidden lg:table-cell">
+          <p className="text-white font-mono">{formatUSD(volume7d)}</p>
+        </td>
+        
+        {/* APR */}
+        <td className="py-4 px-4 text-right">
+          <p className={`font-mono ${getAPRColor(apr)}`}>
+            {apr.toFixed(2)}%
+          </p>
+        </td>
+        
+        {/* Expand Icon */}
+        <td className="py-4 px-4 text-right">
+          {isExpanded ? (
+            <ChevronUp className="w-5 h-5 text-cyan-400 inline" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-gray-400 inline" />
+          )}
+        </td>
+      </tr>
+      
+      {/* Expanded Details */}
+      {isExpanded && (
+        <tr className="bg-slate-800/50">
+          <td colSpan={6} className="px-4 py-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Pool Reserves */}
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="bg-slate-900/50 rounded-xl px-5 py-4 border border-white/5">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Pool Reserves</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <TokenIcon symbol={pool.token0.symbol} size={22} />
+                    <span className="text-white text-sm font-mono">{formatNumber(parseFloat(pool.reserve0))} {pool.token0.symbol}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TokenIcon symbol={pool.token1.symbol} size={22} />
+                    <span className="text-white text-sm font-mono">{formatNumber(parseFloat(pool.reserve1))} {pool.token1.symbol}</span>
+                  </div>
+                </div>
+                
+                <div className="bg-slate-900/50 rounded-xl px-5 py-4 border border-white/5">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">LP Providers</p>
+                  <p className="text-white text-2xl font-bold font-mono">{lpCount}</p>
+                </div>
+              </div>
+              
+              {/* Actions */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAddLiquidity() }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white rounded-xl font-semibold text-sm shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Liquidity
+                </button>
+                <a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-2.5 bg-slate-700 hover:bg-slate-600 text-gray-400 hover:text-white rounded-xl transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+
+// Pool Table Component with cyan/emerald theme
+function PoolTable({ 
+  pools, sortBy, sortDirection, onSort, expandedPoolId, onExpandPool, onAddLiquidity, chainId 
+}: {
+  pools: PoolData[]
+  sortBy: SortField
+  sortDirection: SortDirection
+  onSort: (field: SortField) => void
+  expandedPoolId: string | null
+  onExpandPool: (poolId: string) => void
+  onAddLiquidity: (pool: PoolData) => void
+  chainId: number
+}) {
+  const SortHeader = ({ field, label, className = '' }: { field: SortField; label: string; className?: string }) => (
+    <th 
+      onClick={() => onSort(field)}
+      className={`py-4 px-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider cursor-pointer hover:text-cyan-400 transition-colors ${className}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortBy === field && (
+          sortDirection === 'desc' ? <ChevronDown className="w-3 h-3 text-cyan-400" /> : <ChevronUp className="w-3 h-3 text-cyan-400" />
+        )}
+      </span>
+    </th>
+  )
+  
+  return (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
+      {/* Desktop Table */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-slate-700/50 sticky top-0">
+            <tr>
+              <th className="py-4 px-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Pool</th>
+              <SortHeader field="tvl" label="TVL" />
+              <SortHeader field="volume24h" label="Vol 24H" className="hidden md:table-cell" />
+              <th className="py-4 px-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Vol 7D</th>
+              <SortHeader field="apr" label="APR" />
+              <th className="py-4 px-4 w-12"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {pools.map(pool => (
+              <PoolRow
+                key={pool.id}
+                pool={pool}
+                isExpanded={expandedPoolId === pool.id}
+                onExpand={() => onExpandPool(pool.id)}
+                onAddLiquidity={() => onAddLiquidity(pool)}
+                chainId={chainId}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      
+      {/* Mobile Cards */}
+      <div className="md:hidden divide-y divide-white/5">
+        {pools.map(pool => {
+          const tvl = calculatePoolTVL(pool)
+          const volume = calculatePoolVolume(pool)
+          const apr = calculateAPR(volume * 0.08, tvl)
+          const isExpanded = expandedPoolId === pool.id
+          
+          const getAPRColor = (apr: number) => {
+            if (apr > 100) return 'text-emerald-400'
+            if (apr > 20) return 'text-amber-400'
+            return 'text-gray-300'
+          }
+          
+          return (
+            <div key={pool.id} className="p-4">
+              <div 
+                onClick={() => onExpandPool(pool.id)}
+                className="flex items-center justify-between cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <TokenPair token0={pool.token0.symbol} token1={pool.token1.symbol} size={40} />
+                  <div>
+                    <p className="text-white font-semibold">{pool.token0.symbol}/{pool.token1.symbol}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded-full">V2</span>
+                      <span className="text-[10px] text-gray-500">0.5%</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-white font-mono font-medium">{formatUSD(tvl)}</p>
+                  <p className={`text-sm font-mono ${getAPRColor(apr)}`}>{apr.toFixed(2)}% APR</p>
+                </div>
+              </div>
+              
+              {isExpanded && (
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-slate-900/50 rounded-xl p-3">
+                      <p className="text-xs text-gray-500 mb-1">{pool.token0.symbol}</p>
+                      <p className="text-white text-sm font-mono">{formatNumber(parseFloat(pool.reserve0))}</p>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-xl p-3">
+                      <p className="text-xs text-gray-500 mb-1">{pool.token1.symbol}</p>
+                      <p className="text-white text-sm font-mono">{formatNumber(parseFloat(pool.reserve1))}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onAddLiquidity(pool) }}
+                    className="w-full py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white rounded-xl font-semibold text-sm transition-all active:scale-[0.98]"
+                  >
+                    Add Liquidity
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Position Card for My Positions view with cyan/emerald theme
+function PositionCard({ position, onAdd, onRemove, chainId }: { position: PositionData; onAdd: () => void; onRemove: () => void; chainId: number }) {
+  const pool = position.pair
+  const tvl = calculatePoolTVL(pool, chainId)
+  const totalSupply = parseFloat(pool.totalSupply) || 1
+  const userBalance = parseFloat(position.liquidityTokenBalance) || 0
+  const sharePercent = (userBalance / totalSupply) * 100
+  const userTVL = tvl * (sharePercent / 100)
+  const volume = calculatePoolVolume(pool, chainId)
+  const apr = calculateAPR(volume * 0.08, tvl)
+  
+  // Dynamic explorer URL
+  const explorerUrl = chainId === CHAIN_IDS.MEGAETH 
+    ? `https://megaeth.blockscout.com/address/${pool.id}`
+    : `https://testnet.monadexplorer.com/address/${pool.id}`
+  
+  const getAPRColor = (apr: number) => {
+    if (apr > 100) return 'bg-emerald-500/20 text-emerald-400'
+    if (apr > 20) return 'bg-amber-500/20 text-amber-400'
+    return 'bg-gray-500/20 text-gray-400'
+  }
+  
+  return (
+    <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 rounded-2xl p-5 border border-white/10 hover:border-cyan-400/30 hover:shadow-xl hover:shadow-cyan-500/5 transition-all duration-300">
+      <div className="flex justify-between items-start mb-4">
+        <div className="flex items-center gap-3">
+          <TokenPair token0={pool.token0.symbol} token1={pool.token1.symbol} size={40} />
+          <div>
+            <p className="text-white font-semibold">{pool.token0.symbol}/{pool.token1.symbol}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] px-2 py-0.5 bg-cyan-500/20 text-cyan-400 rounded-full">V2</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${getAPRColor(apr)}`}>
+                {apr.toFixed(1)}% APR
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-white font-bold text-lg font-mono">{formatUSD(userTVL)}</p>
+          <p className="text-xs text-gray-500">{sharePercent.toFixed(4)}% share</p>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="bg-slate-900/50 rounded-xl p-3 border border-white/5">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">LP Tokens</p>
+          <p className="text-white text-sm font-mono font-medium">{userBalance.toFixed(6)}</p>
+        </div>
+        <div className="bg-slate-900/50 rounded-xl p-3 border border-white/5">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Pool TVL</p>
+          <p className="text-white text-sm font-mono font-medium">{formatUSD(tvl)}</p>
+        </div>
+      </div>
+      
+      <div className="flex gap-2">
+        <button onClick={onAdd} className="flex-1 py-2.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 rounded-xl text-sm font-semibold transition-colors">
+          Add
+        </button>
+        <button onClick={onRemove} className="flex-1 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl text-sm font-semibold transition-colors">
+          Remove
+        </button>
+        <a
+          href={explorerUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3 py-2.5 bg-slate-700 hover:bg-slate-600 text-gray-400 hover:text-white rounded-xl transition-colors"
+        >
+          <ExternalLink className="w-4 h-4" />
+        </a>
+      </div>
+    </div>
+  )
+}
+
+
 // Main Pool Page Component
 export function PoolPage() {
   const { address, isConnected } = useAccount()
+  const chainId = useChainId()
   const queryClient = useQueryClient()
+  const subgraphUrl = getSubgraphUrl(chainId)
   
-  // State
-  const [activeTab, setActiveTab] = useState<TabType>('pools')
-  const [sortBy, setSortBy] = useState<SortType>('tvl')
+  const [activeTab, setActiveTab] = useState<TabType>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<SortField>('tvl')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [pools, setPools] = useState<PoolData[]>([])
   const [positions, setPositions] = useState<PositionData[]>([])
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  
-  // Modal states
+  const [expandedPoolId, setExpandedPoolId] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showRemoveModal, setShowRemoveModal] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null)
   
-  // Ref to track if component is mounted
   const isMounted = useRef(true)
-  
+  useEffect(() => { isMounted.current = true; return () => { isMounted.current = false } }, [])
+
+  // Calculate stats
+  const totalTVL = pools.reduce((sum, p) => sum + calculatePoolTVL(p), 0)
+  const totalVolume = pools.reduce((sum, p) => sum + calculatePoolVolume(p), 0)
+  const volume24h = totalVolume * 0.08
+  const fees24h = calculateFees(volume24h)
+  const totalLPCount = pools.reduce((sum, p) => sum + (parseInt(p.liquidityProviderCount) || 0), 0)
+
+  // Fetch pools
+  const fetchPools = useCallback(async () => {
+    try {
+      const res = await fetch(subgraphUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          query: `{ pairs(first: 100, orderBy: txCount, orderDirection: desc) { id token0 { id symbol name } token1 { id symbol name } reserve0 reserve1 volumeToken0 volumeToken1 txCount totalSupply liquidityProviderCount } }` 
+        }),
+      })
+      const data = await res.json()
+      if (isMounted.current && data.data?.pairs) setPools(data.data.pairs)
+    } catch (e) { console.error(e) }
+  }, [subgraphUrl])
+
+  // Fetch user positions
+  const fetchPositions = useCallback(async () => {
+    if (!address) { setPositions([]); return }
+    try {
+      const res = await fetch(subgraphUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          query: `{ liquidityPositions(where: { user: "${address.toLowerCase()}", liquidityTokenBalance_gt: "0" }) { liquidityTokenBalance pair { id token0 { id symbol name } token1 { id symbol name } reserve0 reserve1 volumeToken0 volumeToken1 txCount totalSupply liquidityProviderCount } } }` 
+        }),
+      })
+      const data = await res.json()
+      if (isMounted.current && data.data?.liquidityPositions) setPositions(data.data.liquidityPositions)
+    } catch (e) { console.error(e) }
+  }, [address, subgraphUrl])
+
+  // Reset pools when chain changes
   useEffect(() => {
-    isMounted.current = true
-    return () => { isMounted.current = false }
-  }, [])
-
-  // Fetch pools with cache busting
-  const fetchPools = useCallback(async (showRefreshIndicator = false) => {
-    if (showRefreshIndicator) setIsRefreshing(true)
-    try {
-      const response = await fetch(SUBGRAPH_URL, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-        },
-        body: JSON.stringify({
-          query: `{
-            pairs(first: 50, orderBy: txCount, orderDirection: desc) {
-              id
-              token0 { id symbol name }
-              token1 { id symbol name }
-              reserve0
-              reserve1
-              volumeToken0
-              volumeToken1
-              txCount
-              totalSupply
-              liquidityProviderCount
-            }
-          }`,
-        }),
-      })
-      const data = await response.json()
-      if (isMounted.current && data.data?.pairs) {
-        setPools(data.data.pairs)
-      }
-    } catch (err) {
-      console.error('Failed to fetch pools:', err)
-    } finally {
-      if (isMounted.current) setIsRefreshing(false)
-    }
-  }, [])
-
-  // Fetch positions with cache busting
-  const fetchPositions = useCallback(async (showRefreshIndicator = false) => {
-    if (!address) {
-      setPositions([])
-      return
-    }
-
-    if (showRefreshIndicator) setIsRefreshing(true)
-    try {
-      const response = await fetch(SUBGRAPH_URL, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',
-        },
-        body: JSON.stringify({
-          query: `{
-            liquidityPositions(where: { user: "${address.toLowerCase()}", liquidityTokenBalance_gt: "0" }) {
-              liquidityTokenBalance
-              pair {
-                id
-                token0 { id symbol name }
-                token1 { id symbol name }
-                reserve0
-                reserve1
-                volumeToken0
-                volumeToken1
-                txCount
-                totalSupply
-                liquidityProviderCount
-              }
-            }
-          }`,
-        }),
-      })
-      const data = await response.json()
-      if (isMounted.current && data.data?.liquidityPositions) {
-        setPositions(data.data.liquidityPositions)
-      }
-    } catch (err) {
-      console.error('Failed to fetch positions:', err)
-    } finally {
-      if (isMounted.current) setIsRefreshing(false)
-    }
-  }, [address])
+    setPools([])
+    setPositions([])
+    setLoading(true)
+  }, [chainId])
 
   // Initial load
   useEffect(() => {
-    const load = async () => {
+    const load = async () => { 
       setLoading(true)
       await Promise.all([fetchPools(), fetchPositions()])
-      setLoading(false)
+      setLoading(false) 
     }
     load()
   }, [fetchPools, fetchPositions])
 
-  // Refresh data with retry logic for subgraph indexing delay
-  const refreshDataWithRetry = useCallback(async () => {
-    // Invalidate all wagmi queries to refresh balances
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchPools()
+      fetchPositions()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [fetchPools, fetchPositions])
+
+  // Manual refresh
+  const refresh = useCallback(async () => {
     queryClient.invalidateQueries()
-    
-    // Initial fetch
     setIsRefreshing(true)
-    await Promise.all([fetchPools(false), fetchPositions(false)])
-    
-    // Retry fetches to handle subgraph indexing delay
-    // Subgraph typically indexes within 2-10 seconds
-    const retryDelays = [2000, 4000, 8000] // Retry at 2s, 4s, 8s
-    
-    for (const delay of retryDelays) {
-      if (!isMounted.current) break
-      await new Promise(resolve => setTimeout(resolve, delay))
-      if (!isMounted.current) break
-      await Promise.all([fetchPools(false), fetchPositions(false)])
-    }
-    
-    if (isMounted.current) setIsRefreshing(false)
+    await Promise.all([fetchPools(), fetchPositions()])
+    setTimeout(() => isMounted.current && setIsRefreshing(false), 800)
   }, [fetchPools, fetchPositions, queryClient])
 
-  // Handle success from modals - trigger refresh with retry
-  const handleSuccess = useCallback(() => {
-    refreshDataWithRetry()
-  }, [refreshDataWithRetry])
-
-  // Manual refresh button handler
-  const handleManualRefresh = useCallback(() => {
-    refreshDataWithRetry()
-  }, [refreshDataWithRetry])
-
-  // Filter and sort pools
-  const filteredPools = pools
-    .filter((pool) => {
-      if (!searchQuery) return true
-      const query = searchQuery.toLowerCase()
-      return (
-        pool.token0.symbol.toLowerCase().includes(query) ||
-        pool.token1.symbol.toLowerCase().includes(query) ||
-        pool.token0.name.toLowerCase().includes(query) ||
-        pool.token1.name.toLowerCase().includes(query)
-      )
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'tvl':
-          return calculatePoolTVL(b) - calculatePoolTVL(a)
-        case 'volume':
-          return calculatePoolVolume(b) - calculatePoolVolume(a)
-        case 'apr':
-          const aprA = calculatePoolTVL(a) > 0 ? (calculatePoolVolume(a) * 0.005 * 365) / calculatePoolTVL(a) : 0
-          const aprB = calculatePoolTVL(b) > 0 ? (calculatePoolVolume(b) * 0.005 * 365) / calculatePoolTVL(b) : 0
-          return aprB - aprA
-        default:
-          return 0
-      }
-    })
-
-  // Handle actions
-  const handleRemove = (position: PositionData) => {
-    setSelectedPosition(position)
-    setShowRemoveModal(true)
+  // Filter pools by search
+  const filterPools = (poolList: PoolData[]) => {
+    if (!searchQuery) return poolList
+    const query = searchQuery.toLowerCase()
+    return poolList.filter(p => 
+      p.token0.symbol.toLowerCase().includes(query) || 
+      p.token1.symbol.toLowerCase().includes(query)
+    )
   }
 
+  // Sort pools
+  const sortPools = (poolList: PoolData[]) => {
+    return [...poolList].sort((a, b) => {
+      let aVal = 0, bVal = 0
+      if (sortBy === 'tvl') {
+        aVal = calculatePoolTVL(a, chainId)
+        bVal = calculatePoolTVL(b, chainId)
+      } else if (sortBy === 'volume24h') {
+        aVal = calculatePoolVolume(a, chainId) * 0.08
+        bVal = calculatePoolVolume(b, chainId) * 0.08
+      } else if (sortBy === 'apr') {
+        const aTvl = calculatePoolTVL(a, chainId)
+        const bTvl = calculatePoolTVL(b, chainId)
+        aVal = calculateAPR(calculatePoolVolume(a, chainId) * 0.08, aTvl)
+        bVal = calculateAPR(calculatePoolVolume(b, chainId) * 0.08, bTvl)
+      }
+      return sortDirection === 'desc' ? bVal - aVal : aVal - bVal
+    })
+  }
+
+  // Handle sort
+  const handleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortDirection(d => d === 'desc' ? 'asc' : 'desc')
+    } else {
+      setSortBy(field)
+      setSortDirection('desc')
+    }
+  }
+
+  // Handle expand pool
+  const handleExpandPool = (poolId: string) => {
+    setExpandedPoolId(prev => prev === poolId ? null : poolId)
+  }
+
+  // Handle add liquidity
+  const handleAddLiquidity = (_pool?: PoolData) => {
+    setShowAddModal(true)
+  }
+
+  // Process pools
+  const filteredPools = sortPools(filterPools(pools))
+
   return (
-    <div className="w-full max-w-5xl mx-auto">
-      {/* Header - Responsive */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <div>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-display font-bold gradient-text">💧 Pool</h1>
-            <p className="text-gray-400 text-xs sm:text-sm mt-0.5 sm:mt-1">Provide liquidity and earn fees</p>
-          </div>
-          {/* Refresh Button */}
-          <button
-            onClick={handleManualRefresh}
-            disabled={isRefreshing}
-            className="p-1.5 sm:p-2 hover:bg-atlantis-700/50 rounded-lg transition-colors disabled:opacity-50"
-            title="Refresh data"
-          >
-            <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 text-gray-400 ${isRefreshing ? 'animate-spin text-primary-400' : ''}`} />
-          </button>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 gradient-button font-semibold rounded-xl shadow-glow text-sm sm:text-base"
-        >
-          <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-          Add Liquidity
-        </button>
-      </div>
+    <div className="w-full max-w-7xl mx-auto px-4">
+      {/* Stats Dashboard */}
+      <StatsDashboard 
+        totalTVL={totalTVL} 
+        volume24h={volume24h} 
+        fees24h={fees24h} 
+        lpCount={totalLPCount} 
+      />
 
-      {/* Stats */}
-      <StatsHeader pools={pools} />
-
-      {/* Filter Bar */}
-      <FilterBar
+      {/* Control Bar */}
+      <ControlBar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        sortBy={sortBy}
-        setSortBy={setSortBy}
+        onTabChange={setActiveTab}
         searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        positionCount={positions.length}
+        onSearchChange={setSearchQuery}
+        sortBy={sortBy}
+        onSortChange={handleSort}
+        onAddLiquidity={() => handleAddLiquidity()}
+        onRefresh={refresh}
+        isRefreshing={isRefreshing}
       />
 
       {/* Content */}
-      <div className="space-y-3 sm:space-y-4">
-        {loading ? (
-          <div className="glass-card p-8 sm:p-12 text-center">
-            <RefreshCw className="w-8 h-8 sm:w-10 sm:h-10 text-primary-500 animate-spin mx-auto mb-3 sm:mb-4" />
-            <p className="text-gray-400 text-sm sm:text-base">Loading pools...</p>
+      {loading ? (
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-16 text-center border border-white/10">
+          <RefreshCw className="w-10 h-10 text-cyan-500 animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Loading pools...</p>
+        </div>
+      ) : activeTab === 'myPositions' ? (
+        !isConnected ? (
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-16 text-center border border-white/10">
+            <Wallet className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+            <p className="text-white text-xl font-semibold mb-2">Connect your wallet</p>
+            <p className="text-gray-500">Connect to view your liquidity positions</p>
           </div>
-        ) : activeTab === 'positions' ? (
-          !isConnected ? (
-            <div className="glass-card p-8 sm:p-12 text-center">
-              <Wallet className="w-12 h-12 sm:w-16 sm:h-16 text-gray-600 mx-auto mb-3 sm:mb-4" />
-              <p className="text-white text-base sm:text-lg mb-1 sm:mb-2">Connect your wallet</p>
-              <p className="text-gray-500 text-xs sm:text-sm">Connect to view your liquidity positions</p>
-            </div>
-          ) : positions.length > 0 ? (
-            positions.map((position, idx) => {
-              return (
-                <PositionCard
-                  key={idx}
-                  position={position}
-                  onAdd={() => setShowAddModal(true)}
-                  onRemove={() => handleRemove(position)}
-                />
-              )
-            })
-          ) : (
-            <div className="glass-card p-8 sm:p-12 text-center">
-              <TrendingUp className="w-12 h-12 sm:w-16 sm:h-16 text-gray-600 mx-auto mb-3 sm:mb-4" />
-              <p className="text-white text-base sm:text-lg mb-1 sm:mb-2">No positions yet</p>
-              <p className="text-gray-500 text-xs sm:text-sm mb-4 sm:mb-6">Add liquidity to start earning trading fees</p>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="px-6 sm:px-8 py-2.5 sm:py-3 gradient-button font-semibold rounded-xl text-sm sm:text-base"
-              >
-                Add Liquidity
-              </button>
-            </div>
-          )
-        ) : filteredPools.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {filteredPools.map((pool) => (
-              <PoolCard key={pool.id} pool={pool} onAddLiquidity={() => setShowAddModal(true)} />
+        ) : positions.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {positions.map((pos, i) => (
+              <PositionCard 
+                key={i} 
+                position={pos} 
+                onAdd={() => handleAddLiquidity(pos.pair)} 
+                onRemove={() => { setSelectedPosition(pos); setShowRemoveModal(true) }}
+                chainId={chainId}
+              />
             ))}
           </div>
         ) : (
-          <div className="glass-card p-8 sm:p-12 text-center">
-            <Layers className="w-12 h-12 sm:w-16 sm:h-16 text-gray-600 mx-auto mb-3 sm:mb-4" />
-            <p className="text-white text-base sm:text-lg mb-1 sm:mb-2">No pools found</p>
-            <p className="text-gray-500 text-xs sm:text-sm">Try a different search term</p>
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-16 text-center border border-white/10">
+            <TrendingUp className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+            <p className="text-white text-xl font-semibold mb-2">No positions yet</p>
+            <p className="text-gray-500 mb-6">Add liquidity to start earning fees</p>
+            <button 
+              onClick={() => handleAddLiquidity()} 
+              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white rounded-xl font-semibold transition-all shadow-lg shadow-emerald-500/25"
+            >
+              Add Liquidity
+            </button>
           </div>
-        )}
-      </div>
-
-      {/* Modals */}
-      {showAddModal && (
-        <AddLiquidityModal onClose={() => setShowAddModal(false)} onSuccess={handleSuccess} />
+        )
+      ) : filteredPools.length > 0 ? (
+        <PoolTable
+          pools={filteredPools}
+          sortBy={sortBy}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+          expandedPoolId={expandedPoolId}
+          onExpandPool={handleExpandPool}
+          onAddLiquidity={handleAddLiquidity}
+          chainId={chainId}
+        />
+      ) : (
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-16 text-center border border-white/10">
+          <Layers className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+          <p className="text-white text-xl font-semibold mb-2">No pools found</p>
+          <p className="text-gray-500">Try a different search term</p>
+        </div>
       )}
 
+      {/* Modals */}
+      {showAddModal && <AddLiquidityModal onClose={() => setShowAddModal(false)} onSuccess={refresh} />}
       {showRemoveModal && selectedPosition && (
-        <RemoveLiquidityModal
-          position={selectedPosition}
-          onClose={() => {
-            setShowRemoveModal(false)
-            setSelectedPosition(null)
-          }}
-          onSuccess={handleSuccess}
+        <RemoveLiquidityModal 
+          position={selectedPosition} 
+          onClose={() => { setShowRemoveModal(false); setSelectedPosition(null) }} 
+          onSuccess={refresh} 
         />
       )}
     </div>

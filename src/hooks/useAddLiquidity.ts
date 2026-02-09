@@ -1,6 +1,6 @@
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useChainId } from 'wagmi'
 import { parseUnits } from 'viem'
-import { CONTRACTS } from '../config/contracts'
+import { getContracts } from '../config/contracts'
 import { ROUTER_ABI } from '../config/abis'
 import { NATIVE_ADDRESS, type Token } from '../config/tokens'
 
@@ -24,6 +24,8 @@ export function useAddLiquidity(
 ): UseAddLiquidityResult {
   const { address } = useAccount()
   const publicClient = usePublicClient()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
 
   const {
     writeContract,
@@ -64,7 +66,7 @@ export function useAddLiquidity(
       // Estimate gas with buffer
       try {
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidityETH',
           args: [tokenAddress, tokenAmount, minToken, minETH, address, deadline],
@@ -73,7 +75,7 @@ export function useAddLiquidity(
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidityETH',
           args: [tokenAddress, tokenAmount, minToken, minETH, address, deadline],
@@ -83,7 +85,7 @@ export function useAddLiquidity(
       } catch (err) {
         // Fallback without gas estimation
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidityETH',
           args: [tokenAddress, tokenAmount, minToken, minETH, address, deadline],
@@ -97,7 +99,7 @@ export function useAddLiquidity(
 
       try {
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidity',
           args: [
@@ -114,7 +116,7 @@ export function useAddLiquidity(
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidity',
           args: [
@@ -131,7 +133,7 @@ export function useAddLiquidity(
         })
       } catch (err) {
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidity',
           args: [

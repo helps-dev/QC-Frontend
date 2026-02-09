@@ -1,4 +1,4 @@
-import { Plus, Minus, Gift, RefreshCw, ExternalLink, Clock, AlertTriangle } from 'lucide-react'
+import { Plus, Minus, Gift, RefreshCw, ExternalLink, Clock, AlertTriangle } from '../Icons3D'
 import { useROICalculatorStore } from '../../store/calculatorStore'
 
 function formatNum(num: number, decimals = 2): string {

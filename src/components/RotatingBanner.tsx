@@ -1,30 +1,28 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Zap } from './Icons3D'
+import { IS_MEGAETH_TESTNET } from '../config/chains'
 
 const BANNERS = [
   {
-    text: "🎉 Monic is now live on Monad Mainnet!",
-    gradient: "from-purple-600 via-violet-600 to-purple-600",
-    glow: "shadow-purple-500/30",
+    text: "AIRDROP CAMPAIGN IS NOW LIVE - Trade to earn rewards!",
+    icon: "⚡",
   },
   {
-    text: "⚡ AIRDROP CAMPAIGN IS NOW LIVE - Trade to earn rewards!",
-    gradient: "from-violet-600 via-purple-600 to-violet-600",
-    glow: "shadow-violet-500/30",
+    text: IS_MEGAETH_TESTNET ? "Mexa is now live on MegaETH Testnet!" : "Mexa is now live on MegaETH!",
+    icon: "🎉",
   },
   {
-    text: "💰 Earn 0.4% fee as liquidity provider!",
-    gradient: "from-purple-600 via-fuchsia-600 to-purple-600",
-    glow: "shadow-fuchsia-500/30",
+    text: "Earn 0.4% fee as liquidity provider!",
+    icon: "💰",
   },
   {
-    text: "🚀 0.5% swap fee - Lowest on Monad!",
-    gradient: "from-violet-600 via-purple-600 to-violet-600",
-    glow: "shadow-purple-500/30",
+    text: "0.5% swap fee - Lowest fees guaranteed!",
+    icon: "🚀",
   },
 ]
 
-const INTERVAL_MS = 3000 // 3 seconds
+const INTERVAL_MS = 4000
 
 export function RotatingBanner() {
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -40,7 +38,6 @@ export function RotatingBanner() {
 
   useEffect(() => {
     if (isPaused) return
-    
     const interval = setInterval(goToNext, INTERVAL_MS)
     return () => clearInterval(interval)
   }, [isPaused, goToNext])
@@ -49,54 +46,49 @@ export function RotatingBanner() {
 
   return (
     <div 
-      className="flex flex-col items-center gap-3 mb-6"
+      className="flex flex-col items-center gap-3 mb-8"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
       {/* Banner Container */}
-      <div className="relative w-full h-12 md:h-14 rounded-2xl overflow-hidden">
-        {/* Animated Background Glow */}
-        <div className={`absolute inset-0 bg-gradient-to-r ${currentBanner.gradient} opacity-20 blur-xl transition-all duration-500`} />
+      <div className="relative w-full max-w-2xl h-12 rounded-full overflow-hidden">
+        {/* Gradient Background */}
+        <div className="absolute inset-0 bg-gradient-to-r from-purple-600 via-violet-500 to-purple-600" />
         
-        {/* Banner Content with AnimatePresence for smooth transitions */}
+        {/* Animated shine effect */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full animate-[shimmer_3s_infinite]" />
+        
+        {/* Banner Content */}
         <AnimatePresence mode="wait">
           <motion.div
             key={currentIndex}
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.98 }}
-            transition={{ 
-              duration: 0.4, 
-              ease: [0.4, 0, 0.2, 1] // Custom easing for smooth feel
-            }}
-            className={`absolute inset-0 flex items-center justify-center px-6
-              bg-gradient-to-r ${currentBanner.gradient}
-              shadow-lg ${currentBanner.glow}`}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            className="absolute inset-0 flex items-center justify-center px-6 gap-2"
           >
-            {/* Subtle shine effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12 animate-shimmer" />
-            
-            <p className="relative text-sm md:text-base lg:text-lg font-semibold text-white text-center tracking-wide">
+            <Zap className="w-4 h-4 text-yellow-300 fill-yellow-300" />
+            <p className="text-sm md:text-base font-semibold text-white text-center">
               {currentBanner.text}
             </p>
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Dots Indicator - Below Banner */}
+      {/* Dots Indicator */}
       <div className="flex items-center gap-2">
         {BANNERS.map((_, index) => (
           <button
             key={index}
             onClick={() => goToIndex(index)}
-            aria-label={`Go to banner ${index + 1}`}
-            className="group relative p-1"
+            className="p-1"
           >
             <span
               className={`block rounded-full transition-all duration-300 ${
                 index === currentIndex 
-                  ? 'w-6 h-2 bg-gradient-to-r from-purple-500 to-violet-500' 
-                  : 'w-2 h-2 bg-gray-600 hover:bg-gray-500 group-hover:scale-110'
+                  ? 'w-6 h-1.5 bg-white' 
+                  : 'w-1.5 h-1.5 bg-gray-500 hover:bg-gray-400'
               }`}
             />
           </button>

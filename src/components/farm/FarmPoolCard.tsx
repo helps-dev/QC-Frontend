@@ -39,7 +39,7 @@ export function FarmPoolCard({ data, version }: FarmPoolCardProps) {
                 {pool.token0.symbol}/{pool.token1.symbol}
               </h3>
               <span className="text-xs text-gray-400">
-                V2 Pool • MasterChef {version}
+                V2 MexaSwap • MasterChef {version}
               </span>
             </div>
           </div>

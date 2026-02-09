@@ -1,4 +1,4 @@
-import { Zap, TrendingUp, Clock, Gift, AlertTriangle, Users, Coins } from 'lucide-react'
+import { Zap, TrendingUp, Clock, Gift, AlertTriangle, Users, Coins } from '../Icons3D'
 import { useROICalculatorStore } from '../../store/calculatorStore'
 
 function formatNum(num: number, decimals = 2): string {

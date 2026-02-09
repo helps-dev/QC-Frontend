@@ -1,7 +1,5 @@
-import { CONTRACTS } from './contracts'
-
-// Monad logo URL
-export const MONAD_LOGO = 'https://imagedelivery.net/cBNDGgkrsEA-b_ixIp9SkQ/MON.png/public'
+import { getContracts, MONAD_CONTRACTS, MEGAETH_CONTRACTS } from './contracts'
+import { CHAIN_IDS, MONAD_LOGO, ETH_LOGO, WETH_LOGO, MEXA_LOGO, GMEXA_LOGO } from './chains'
 
 export interface Token {
   address: `0x${string}`
@@ -12,8 +10,12 @@ export interface Token {
   logoURI?: string
 }
 
-// Native MON token (address 0x0 represents native)
+// Native token address (address 0x0 represents native)
 export const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000' as `0x${string}`
+
+// ═══════════════════════════════════════════════════════════════
+// MONAD TOKENS
+// ═══════════════════════════════════════════════════════════════
 
 export const MON_TOKEN: Token = {
   address: NATIVE_ADDRESS,
@@ -25,7 +27,7 @@ export const MON_TOKEN: Token = {
 }
 
 export const WMON_TOKEN: Token = {
-  address: CONTRACTS.WMON,
+  address: MONAD_CONTRACTS.WETH,
   symbol: 'WMON',
   name: 'Wrapped MON',
   decimals: 18,
@@ -34,24 +36,14 @@ export const WMON_TOKEN: Token = {
 }
 
 export const QUICK_TOKEN: Token = {
-  address: CONTRACTS.QUICK,
+  address: MONAD_CONTRACTS.NATIVE_TOKEN,
   symbol: 'QUICK',
   name: 'QuickSwap Token',
   decimals: 18,
   isNative: false,
 }
 
-// MMF Token
-export const MMF_TOKEN: Token = {
-  address: '0x775B6D1d23463AC5Cc7684139a8A7642970e3Cda' as `0x${string}`,
-  symbol: 'MMF',
-  name: 'MMFinance',
-  decimals: 18,
-  isNative: false,
-}
-
-// USDC - Official Circle USDC on Monad mainnet
-export const USDC_TOKEN: Token = {
+export const USDC_MONAD_TOKEN: Token = {
   address: '0x754704Bc059F8C67012fEd69BC8A327a5aafb603' as `0x${string}`,
   symbol: 'USDC',
   name: 'USD Coin',
@@ -60,40 +52,139 @@ export const USDC_TOKEN: Token = {
   logoURI: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png'
 }
 
-// Default tokens list - Only MON, WMON, USDC shown to new users
-export const DEFAULT_TOKENS: Token[] = [MON_TOKEN, WMON_TOKEN, USDC_TOKEN]
+// ═══════════════════════════════════════════════════════════════
+// MEGAETH TOKENS
+// ═══════════════════════════════════════════════════════════════
 
-// Helper to check if a token is native MON
+export const ETH_TOKEN: Token = {
+  address: NATIVE_ADDRESS,
+  symbol: 'ETH',
+  name: 'Ether',
+  decimals: 18,
+  isNative: true,
+  logoURI: ETH_LOGO
+}
+
+export const WETH_TOKEN: Token = {
+  address: MEGAETH_CONTRACTS.WETH,
+  symbol: 'WETH',
+  name: 'Wrapped ETH',
+  decimals: 18,
+  isNative: false,
+  logoURI: WETH_LOGO
+}
+
+export const MEXA_TOKEN: Token = {
+  address: MEGAETH_CONTRACTS.NATIVE_TOKEN,
+  symbol: 'MXA',
+  name: 'Mexa Token',
+  decimals: 18,
+  isNative: false,
+  logoURI: MEXA_LOGO
+}
+
+export const GMEXA_TOKEN: Token = {
+  address: MEGAETH_CONTRACTS.TOKEN_STAKE,
+  symbol: 'gMEXA',
+  name: 'gMEXA Stake',
+  decimals: 18,
+  isNative: false,
+  logoURI: GMEXA_LOGO
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MULTI-CHAIN TOKEN HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+export function getNativeToken(chainId: number): Token {
+  switch (chainId) {
+    case CHAIN_IDS.MEGAETH:
+      return ETH_TOKEN
+    case CHAIN_IDS.MONAD:
+    default:
+      return MON_TOKEN
+  }
+}
+
+export function getWrappedToken(chainId: number): Token {
+  switch (chainId) {
+    case CHAIN_IDS.MEGAETH:
+      return WETH_TOKEN
+    case CHAIN_IDS.MONAD:
+    default:
+      return WMON_TOKEN
+  }
+}
+
+export function getDefaultTokens(chainId: number): Token[] {
+  switch (chainId) {
+    case CHAIN_IDS.MEGAETH:
+      return [ETH_TOKEN, WETH_TOKEN, MEXA_TOKEN, GMEXA_TOKEN]
+    case CHAIN_IDS.MONAD:
+    default:
+      return [MON_TOKEN, WMON_TOKEN, USDC_MONAD_TOKEN]
+  }
+}
+
+export function getGovernanceToken(chainId: number): Token {
+  switch (chainId) {
+    case CHAIN_IDS.MEGAETH:
+      return MEXA_TOKEN
+    case CHAIN_IDS.MONAD:
+    default:
+      return QUICK_TOKEN
+  }
+}
+
 export function isNativeToken(token: Token): boolean {
   return token.address === NATIVE_ADDRESS || token.isNative === true
 }
 
-// Helper to get the actual address for routing (WMON for native MON)
-export function getRouteAddress(token: Token): `0x${string}` {
-  return isNativeToken(token) ? CONTRACTS.WMON : token.address
+export function getRouteAddress(token: Token, chainId: number): `0x${string}` {
+  if (isNativeToken(token)) {
+    const contracts = getContracts(chainId)
+    return contracts.WETH
+  }
+  return token.address
 }
 
-// Local storage key for imported tokens
-export const IMPORTED_TOKENS_KEY = 'quickswap_imported_tokens'
+// ═══════════════════════════════════════════════════════════════
+// LOCAL STORAGE FOR IMPORTED TOKENS
+// ═══════════════════════════════════════════════════════════════
 
-export function getStoredTokens(): Token[] {
+export const IMPORTED_TOKENS_KEY = 'mexa_imported_tokens'
+
+export function getStoredTokens(chainId: number): Token[] {
   try {
-    const stored = localStorage.getItem(IMPORTED_TOKENS_KEY)
+    const key = `${IMPORTED_TOKENS_KEY}_${chainId}`
+    const stored = localStorage.getItem(key)
     return stored ? JSON.parse(stored) : []
   } catch {
     return []
   }
 }
 
-export function saveToken(token: Token): void {
-  const tokens = getStoredTokens()
+export function saveToken(token: Token, chainId: number): void {
+  const tokens = getStoredTokens(chainId)
   if (!tokens.find(t => t.address.toLowerCase() === token.address.toLowerCase())) {
     tokens.push(token)
-    localStorage.setItem(IMPORTED_TOKENS_KEY, JSON.stringify(tokens))
+    const key = `${IMPORTED_TOKENS_KEY}_${chainId}`
+    localStorage.setItem(key, JSON.stringify(tokens))
   }
 }
 
-export function removeToken(address: string): void {
-  const tokens = getStoredTokens().filter(t => t.address.toLowerCase() !== address.toLowerCase())
-  localStorage.setItem(IMPORTED_TOKENS_KEY, JSON.stringify(tokens))
+export function removeToken(address: string, chainId: number): void {
+  const key = `${IMPORTED_TOKENS_KEY}_${chainId}`
+  const tokens = getStoredTokens(chainId).filter(t => t.address.toLowerCase() !== address.toLowerCase())
+  localStorage.setItem(key, JSON.stringify(tokens))
 }
+
+// ═══════════════════════════════════════════════════════════════
+// LEGACY EXPORTS (backward compatibility)
+// ═══════════════════════════════════════════════════════════════
+
+export const DEFAULT_TOKENS: Token[] = [MON_TOKEN, WMON_TOKEN, USDC_MONAD_TOKEN]
+export const USDC_TOKEN = USDC_MONAD_TOKEN
+
+import { CONTRACTS } from './contracts'
+export { CONTRACTS }

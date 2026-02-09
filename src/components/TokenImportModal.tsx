@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { usePublicClient } from 'wagmi'
+import { usePublicClient, useChainId } from 'wagmi'
 import { type Token, saveToken } from '../config/tokens'
 import { ERC20_ABI } from '../config/abis'
 
@@ -15,6 +15,7 @@ export function TokenImportModal({ onClose, onTokenImported }: Props) {
   const [tokenInfo, setTokenInfo] = useState<Token | null>(null)
   
   const publicClient = usePublicClient()
+  const chainId = useChainId()
 
   const handleSearch = async () => {
     if (!address || !address.startsWith('0x') || address.length !== 42) {
@@ -58,7 +59,7 @@ export function TokenImportModal({ onClose, onTokenImported }: Props) {
 
   const handleImport = () => {
     if (tokenInfo) {
-      saveToken(tokenInfo)
+      saveToken(tokenInfo, chainId)
       onTokenImported(tokenInfo)
       onClose()
     }

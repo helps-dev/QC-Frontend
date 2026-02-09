@@ -6,14 +6,15 @@ import {
   useReadContract,
   useBalance,
   usePublicClient,
+  useChainId,
 } from 'wagmi'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseUnits, formatUnits } from 'viem'
-import { X, Plus, RefreshCw, AlertTriangle, Lock, Unlock, Info, ChevronDown } from 'lucide-react'
-import { CONTRACTS } from '../../config/contracts'
+import { X, Plus, RefreshCw, AlertTriangle, Lock, Unlock, Info, ChevronDown } from '../Icons3D'
+import { getContracts } from '../../config/contracts'
 import { ROUTER_ABI, ERC20_ABI } from '../../config/abis'
 import { TokenModal } from '../TokenModal'
-import { type Token, MON_TOKEN, QUICK_TOKEN } from '../../config/tokens'
+import { type Token, getNativeToken, getGovernanceToken } from '../../config/tokens'
 import { usePoolRatio } from '../../hooks/usePoolRatio'
 
 // Token Icon
@@ -40,6 +41,8 @@ interface AddLiquidityModalProps {
 
 export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps) {
   const { address, isConnected } = useAccount()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
   const publicClient = usePublicClient()
   const queryClient = useQueryClient()
   
@@ -50,14 +53,26 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
     return () => { isMounted.current = false }
   }, [])
 
+  // Get default tokens based on chain
+  const defaultTokenA = getNativeToken(chainId)
+  const defaultTokenB = getGovernanceToken(chainId)
+
   // Token state
-  const [tokenA, setTokenA] = useState<Token>(MON_TOKEN)
-  const [tokenB, setTokenB] = useState<Token>(QUICK_TOKEN)
+  const [tokenA, setTokenA] = useState<Token>(defaultTokenA)
+  const [tokenB, setTokenB] = useState<Token>(defaultTokenB)
   const [amountA, setAmountA] = useState('')
   const [amountB, setAmountB] = useState('')
   const [slippage, setSlippage] = useState(10)
   const [isLocked, setIsLocked] = useState(true)
   const [lastChanged, setLastChanged] = useState<'a' | 'b' | null>(null)
+
+  // Reset tokens when chain changes
+  useEffect(() => {
+    setTokenA(getNativeToken(chainId))
+    setTokenB(getGovernanceToken(chainId))
+    setAmountA('')
+    setAmountB('')
+  }, [chainId])
 
   // Modal state
   const [showTokenModalA, setShowTokenModalA] = useState(false)
@@ -106,14 +121,14 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
     address: tokenA.address,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CONTRACTS.ROUTER] : undefined,
+    args: address ? [address, contracts.ROUTER] : undefined,
     query: { enabled: !!address && !tokenA.isNative },
   })
   const { data: allowB, refetch: refetchAllowB } = useReadContract({
     address: tokenB.address,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CONTRACTS.ROUTER] : undefined,
+    args: address ? [address, contracts.ROUTER] : undefined,
     query: { enabled: !!address && !tokenB.isNative },
   })
 
@@ -181,7 +196,7 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
         address: tokenA.address,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.ROUTER, maxApproval],
+        args: [contracts.ROUTER, maxApproval],
       })
     } catch {
       setStep('input')
@@ -197,7 +212,7 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
         address: tokenB.address,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.ROUTER, maxApproval],
+        args: [contracts.ROUTER, maxApproval],
       })
     } catch {
       setStep('input')
@@ -222,7 +237,7 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
         const minETH = (nativeAmount * slipMult) / 100n
 
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidityETH',
           args: [tokenAddress, tokenAmount, minToken, minETH, address, deadline],
@@ -231,7 +246,7 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidityETH',
           args: [tokenAddress, tokenAmount, minToken, minETH, address, deadline],
@@ -240,7 +255,7 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
         })
       } else {
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidity',
           args: [tokenA.address, tokenB.address, amtAWei, amtBWei, (amtAWei * slipMult) / 100n, (amtBWei * slipMult) / 100n, address, deadline],
@@ -248,7 +263,7 @@ export function AddLiquidityModal({ onClose, onSuccess }: AddLiquidityModalProps
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidity',
           args: [tokenA.address, tokenB.address, amtAWei, amtBWei, (amtAWei * slipMult) / 100n, (amtBWei * slipMult) / 100n, address, deadline],

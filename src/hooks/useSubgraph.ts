@@ -1,9 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
-import { SUBGRAPH_URL } from '../config/contracts'
+import { useChainId } from 'wagmi'
+import { getSubgraphUrl } from '../config/contracts'
+import { CHAIN_IDS } from '../config/chains'
 
-async function querySubgraph(query: string, variables?: Record<string, unknown>) {
-  console.log('🔄 Querying subgraph:', SUBGRAPH_URL)
-  const response = await fetch(SUBGRAPH_URL, {
+// Dynamic subgraph query based on chain
+async function querySubgraph(url: string, query: string, variables?: Record<string, unknown>) {
+  if (!url) {
+    console.warn('⚠️ No subgraph URL configured for this chain')
+    return null
+  }
+  
+  console.log('🔄 Querying subgraph:', url)
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
@@ -19,15 +27,23 @@ async function querySubgraph(query: string, variables?: Record<string, unknown>)
 }
 
 export function useFactoryStats() {
+  const chainId = useChainId()
+  const subgraphUrl = getSubgraphUrl(chainId)
+  const isETHChain = chainId === CHAIN_IDS.MEGAETH
+  
+  // Use different field names based on chain
+  const volumeField = isETHChain ? 'totalVolumeETH' : 'totalVolumeMON'
+  const liquidityField = isETHChain ? 'totalLiquidityETH' : 'totalLiquidityMON'
+  
   return useQuery({
-    queryKey: ['factoryStats'],
+    queryKey: ['factoryStats', chainId],
     queryFn: async () => {
-      const data = await querySubgraph(`{
+      const data = await querySubgraph(subgraphUrl, `{
         factories(first: 1) {
           id
           pairCount
-          totalVolumeMON
-          totalLiquidityMON
+          ${volumeField}
+          ${liquidityField}
           txCount
         }
       }`)
@@ -36,14 +52,18 @@ export function useFactoryStats() {
     },
     refetchInterval: 30000,
     retry: 2,
+    enabled: !!subgraphUrl,
   })
 }
 
 export function usePairs() {
+  const chainId = useChainId()
+  const subgraphUrl = getSubgraphUrl(chainId)
+  
   return useQuery({
-    queryKey: ['pairs'],
+    queryKey: ['pairs', chainId],
     queryFn: async () => {
-      const data = await querySubgraph(`{
+      const data = await querySubgraph(subgraphUrl, `{
         pairs(first: 50, orderBy: txCount, orderDirection: desc) {
           id
           token0 { id symbol name }
@@ -64,14 +84,18 @@ export function usePairs() {
     },
     refetchInterval: 15000,
     retry: 2,
+    enabled: !!subgraphUrl,
   })
 }
 
 export function useRecentSwaps() {
+  const chainId = useChainId()
+  const subgraphUrl = getSubgraphUrl(chainId)
+  
   return useQuery({
-    queryKey: ['recentSwaps'],
+    queryKey: ['recentSwaps', chainId],
     queryFn: async () => {
-      const data = await querySubgraph(`{
+      const data = await querySubgraph(subgraphUrl, `{
         swaps(first: 20, orderBy: timestamp, orderDirection: desc) {
           id
           timestamp
@@ -87,15 +111,19 @@ export function useRecentSwaps() {
     },
     refetchInterval: 10000,
     retry: 2,
+    enabled: !!subgraphUrl,
   })
 }
 
 export function useUserPositions(userAddress: string | undefined) {
+  const chainId = useChainId()
+  const subgraphUrl = getSubgraphUrl(chainId)
+  
   return useQuery({
-    queryKey: ['userPositions', userAddress],
+    queryKey: ['userPositions', userAddress, chainId],
     queryFn: async () => {
       if (!userAddress) return []
-      const data = await querySubgraph(`{
+      const data = await querySubgraph(subgraphUrl, `{
         liquidityPositions(where: { user: "${userAddress.toLowerCase()}", liquidityTokenBalance_gt: "0" }) {
           id
           liquidityTokenBalance
@@ -112,7 +140,7 @@ export function useUserPositions(userAddress: string | undefined) {
       console.log('📊 User positions:', data?.liquidityPositions?.length || 0)
       return data?.liquidityPositions || []
     },
-    enabled: !!userAddress,
+    enabled: !!userAddress && !!subgraphUrl,
     refetchInterval: 30000,
     retry: 2,
   })

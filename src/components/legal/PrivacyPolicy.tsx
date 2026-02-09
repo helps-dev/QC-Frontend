@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from '../Icons3D'
 
 interface PrivacyPolicyProps {
   onBack: () => void
@@ -23,7 +23,7 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">1. Introduction</h2>
             <p>
-              Monic DEX ("we", "our", or "the Platform") is committed to protecting your privacy. 
+              Mexa DEX ("we", "our", or "the Platform") is committed to protecting your privacy. 
               This Privacy Policy explains how we collect, use, and safeguard information when you 
               use our decentralized exchange platform.
             </p>
@@ -36,7 +36,7 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
             <h3 className="text-lg font-medium text-white mt-4 mb-2">2.1 Blockchain Data</h3>
             <p>
               When you interact with our smart contracts, your wallet address and transaction data 
-              are recorded on the public Monad blockchain. This data is publicly accessible and 
+              are recorded on the public MegaETH blockchain. This data is publicly accessible and 
               cannot be deleted.
             </p>
 

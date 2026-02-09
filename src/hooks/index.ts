@@ -1,4 +1,4 @@
-// Custom hooks for QuickSwap Monad DEX
+// Custom hooks for Mexa DEX
 export { useTokenBalance, useMultipleTokenBalances } from './useTokenBalance'
 export { useApproval, useLPApproval } from './useApproval'
 export { useAddLiquidity } from './useAddLiquidity'

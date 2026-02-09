@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react'
-import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi'
 import { parseUnits, parseEther, formatUnits, formatEther } from 'viem'
-import { ChevronDown, ArrowDownUp, Info } from 'lucide-react'
-import { CONTRACTS, FEE } from '../config/contracts'
+import { ChevronDown, RefreshCw, BarChart3, Info } from './Icons3D'
+import { getContracts, FEE } from '../config/contracts'
 import { ROUTER_ABI, ERC20_ABI, WMON_ABI } from '../config/abis'
-import { DEFAULT_TOKENS, NATIVE_ADDRESS, getStoredTokens, type Token } from '../config/tokens'
+import { NATIVE_ADDRESS, getStoredTokens, getDefaultTokens, type Token } from '../config/tokens'
 import { TokenModal } from './TokenModal'
 import { TokenImportModal } from './TokenImportModal'
 import { TransactionSettings, type SwapSettings } from './TransactionSettings'
 
 export function SwapCard() {
   const { address, isConnected } = useAccount()
-  const [tokenIn, setTokenIn] = useState<Token>(DEFAULT_TOKENS[0]) // MON
-  const [tokenOut, setTokenOut] = useState<Token>(DEFAULT_TOKENS[2]) // QUICK
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  const defaultTokens = getDefaultTokens(chainId)
+  
+  const [tokenIn, setTokenIn] = useState<Token>(defaultTokens[0])
+  const [tokenOut, setTokenOut] = useState<Token>(defaultTokens[1])
   const [amountIn, setAmountIn] = useState('')
   const [amountOut, setAmountOut] = useState('')
   const [settings, setSettings] = useState<SwapSettings>({ slippage: 0.5, deadline: 20, expertMode: false })
@@ -22,21 +26,28 @@ export function SwapCard() {
   const [showDetails, setShowDetails] = useState(false)
 
   useEffect(() => {
-    setCustomTokens(getStoredTokens())
-  }, [])
+    const newDefaultTokens = getDefaultTokens(chainId)
+    setTokenIn(newDefaultTokens[0])
+    setTokenOut(newDefaultTokens[1])
+    setAmountIn('')
+    setAmountOut('')
+  }, [chainId])
+
+  useEffect(() => {
+    setCustomTokens(getStoredTokens(chainId))
+  }, [chainId])
 
   const isNativeIn = tokenIn.address === NATIVE_ADDRESS
   const isNativeOut = tokenOut.address === NATIVE_ADDRESS
-  const isWmonIn = tokenIn.address.toLowerCase() === CONTRACTS.WMON.toLowerCase()
-  const isWmonOut = tokenOut.address.toLowerCase() === CONTRACTS.WMON.toLowerCase()
+  const isWrappedIn = tokenIn.address.toLowerCase() === contracts.WETH.toLowerCase()
+  const isWrappedOut = tokenOut.address.toLowerCase() === contracts.WETH.toLowerCase()
   
-  // Check if this is a wrap (MON → WMON) or unwrap (WMON → MON) operation
-  const isWrapOperation = isNativeIn && isWmonOut
-  const isUnwrapOperation = isWmonIn && isNativeOut
+  const isWrapOperation = isNativeIn && isWrappedOut
+  const isUnwrapOperation = isWrappedIn && isNativeOut
   const isWrapOrUnwrap = isWrapOperation || isUnwrapOperation
 
-  const routeTokenIn = isNativeIn ? CONTRACTS.WMON : tokenIn.address
-  const routeTokenOut = isNativeOut ? CONTRACTS.WMON : tokenOut.address
+  const routeTokenIn = isNativeIn ? contracts.WETH : tokenIn.address
+  const routeTokenOut = isNativeOut ? contracts.WETH : tokenOut.address
 
   const { writeContract, data: hash, isPending, reset } = useWriteContract()
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
@@ -50,10 +61,8 @@ export function SwapCard() {
     }
   }, [isSuccess, reset])
 
-  // For wrap/unwrap, output = input (1:1)
-  // For swaps, use router getAmountsOut
   const { data: amountsOut } = useReadContract({
-    address: CONTRACTS.ROUTER,
+    address: contracts.ROUTER,
     abi: ROUTER_ABI,
     functionName: 'getAmountsOut',
     args: amountIn && parseFloat(amountIn) > 0 
@@ -80,8 +89,8 @@ export function SwapCard() {
     query: { enabled: !!address && !isNativeOut }
   })
 
-  const { data: wmonBalance } = useReadContract({
-    address: CONTRACTS.WMON,
+  const { data: wrappedBalance } = useReadContract({
+    address: contracts.WETH,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
@@ -92,14 +101,12 @@ export function SwapCard() {
     address: tokenIn.address,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CONTRACTS.ROUTER] : undefined,
+    args: address ? [address, contracts.ROUTER] : undefined,
     query: { enabled: !!address && !isNativeIn && !isWrapOrUnwrap }
   })
 
-  // Update amountOut based on operation type
   useEffect(() => {
     if (isWrapOrUnwrap) {
-      // 1:1 for wrap/unwrap
       setAmountOut(amountIn || '')
     } else if (amountsOut) {
       setAmountOut(formatUnits(amountsOut[1], 18))
@@ -114,8 +121,8 @@ export function SwapCard() {
 
   const balanceOut = isNativeOut
     ? (nativeBalance ? formatEther(nativeBalance.value) : '0')
-    : isWmonOut
-    ? (wmonBalance ? formatUnits(wmonBalance, 18) : '0')
+    : isWrappedOut
+    ? (wrappedBalance ? formatUnits(wrappedBalance, 18) : '0')
     : (tokenOutBalance ? formatUnits(tokenOutBalance, 18) : '0')
 
   const needsApproval = !isNativeIn && !isWrapOrUnwrap && allowance !== undefined && amountIn 
@@ -127,14 +134,14 @@ export function SwapCard() {
       address: tokenIn.address,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [CONTRACTS.ROUTER, parseUnits('999999999', 18)]
+      args: [contracts.ROUTER, parseUnits('999999999', 18)]
     })
   }
 
   const handleWrap = () => {
     if (!address || !amountIn) return
     writeContract({
-      address: CONTRACTS.WMON,
+      address: contracts.WETH,
       abi: WMON_ABI,
       functionName: 'deposit',
       value: parseEther(amountIn)
@@ -144,7 +151,7 @@ export function SwapCard() {
   const handleUnwrap = () => {
     if (!address || !amountIn) return
     writeContract({
-      address: CONTRACTS.WMON,
+      address: contracts.WETH,
       abi: WMON_ABI,
       functionName: 'withdraw',
       args: [parseUnits(amountIn, 18)]
@@ -154,37 +161,30 @@ export function SwapCard() {
   const handleSwap = () => {
     if (!address || !amountIn || !amountOut) return
     
-    // Handle wrap/unwrap separately
-    if (isWrapOperation) {
-      handleWrap()
-      return
-    }
-    if (isUnwrapOperation) {
-      handleUnwrap()
-      return
-    }
+    if (isWrapOperation) { handleWrap(); return }
+    if (isUnwrapOperation) { handleUnwrap(); return }
 
     const minOut = parseUnits((parseFloat(amountOut) * (1 - settings.slippage / 100)).toFixed(18), 18)
     const deadline = BigInt(Math.floor(Date.now() / 1000) + settings.deadline * 60)
 
     if (isNativeIn) {
       writeContract({
-        address: CONTRACTS.ROUTER,
+        address: contracts.ROUTER,
         abi: ROUTER_ABI,
         functionName: 'swapExactETHForTokens',
-        args: [minOut, [CONTRACTS.WMON, routeTokenOut], address, deadline],
+        args: [minOut, [contracts.WETH, routeTokenOut], address, deadline],
         value: parseEther(amountIn)
       })
     } else if (isNativeOut) {
       writeContract({
-        address: CONTRACTS.ROUTER,
+        address: contracts.ROUTER,
         abi: ROUTER_ABI,
         functionName: 'swapExactTokensForETH',
-        args: [parseUnits(amountIn, 18), minOut, [routeTokenIn, CONTRACTS.WMON], address, deadline]
+        args: [parseUnits(amountIn, 18), minOut, [routeTokenIn, contracts.WETH], address, deadline]
       })
     } else {
       writeContract({
-        address: CONTRACTS.ROUTER,
+        address: contracts.ROUTER,
         abi: ROUTER_ABI,
         functionName: 'swapExactTokensForTokens',
         args: [parseUnits(amountIn, 18), minOut, [routeTokenIn, routeTokenOut], address, deadline]
@@ -201,14 +201,10 @@ export function SwapCard() {
 
   const handleTokenSelect = (token: Token, type: 'in' | 'out') => {
     if (type === 'in') {
-      if (token.address === tokenOut.address) {
-        setTokenOut(tokenIn)
-      }
+      if (token.address === tokenOut.address) setTokenOut(tokenIn)
       setTokenIn(token)
     } else {
-      if (token.address === tokenIn.address) {
-        setTokenIn(tokenOut)
-      }
+      if (token.address === tokenIn.address) setTokenIn(tokenOut)
       setTokenOut(token)
     }
     setShowTokenModal(null)
@@ -234,10 +230,8 @@ export function SwapCard() {
     ? (parseFloat(amountOut) / parseFloat(amountIn)).toFixed(6) 
     : '0'
 
-  // Check if tokens are the same (but allow MON ↔ WMON)
   const isSameToken = !isWrapOrUnwrap && routeTokenIn === routeTokenOut
 
-  // Get button text
   const getButtonText = () => {
     if (isWrapOperation) return 'Wrap'
     if (isUnwrapOperation) return 'Unwrap'
@@ -245,25 +239,31 @@ export function SwapCard() {
   }
 
   return (
-    <div className="glass-card p-5">
+    <div className="w-full max-w-[420px] bg-[#1a1a2e]/90 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl shadow-purple-900/20 p-5">
       {/* Header */}
       <div className="flex justify-between items-center mb-5">
-        <h2 className="text-xl font-display font-bold text-white">
-          {isWrapOperation ? 'Wrap' : isUnwrapOperation ? 'Unwrap' : 'Swap'}
-        </h2>
-        <TransactionSettings settings={settings} onSettingsChange={setSettings} />
+        <h2 className="text-xl font-bold text-white">Swap</h2>
+        <div className="flex items-center gap-2">
+          <TransactionSettings settings={settings} onSettingsChange={setSettings} />
+          <button 
+            onClick={() => setShowDetails(!showDetails)}
+            className="w-9 h-9 rounded-xl bg-[#252542] hover:bg-[#2d2d4a] border border-white/5 flex items-center justify-center transition-all"
+          >
+            <BarChart3 className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
       </div>
       
-      <div className="space-y-2">
+      <div className="space-y-3">
         {/* Sell Section */}
-        <div className="bg-atlantis-800/40 rounded-2xl p-4 border border-atlantis-700/30">
-          <div className="flex justify-between items-center mb-2">
+        <div className="bg-[#12121a] rounded-2xl p-4 border border-white/5">
+          <div className="flex justify-between items-center mb-3">
             <span className="text-sm text-gray-400">Sell</span>
             <div className="flex items-center gap-2 text-xs">
               <span className="text-gray-500">Balance: {parseFloat(balanceIn).toFixed(4)}</span>
               <button 
                 onClick={setMaxAmount}
-                className="text-primary-400 hover:text-primary-300 font-semibold transition-colors"
+                className="text-purple-400 hover:text-purple-300 font-semibold transition-colors"
               >
                 MAX
               </button>
@@ -275,39 +275,39 @@ export function SwapCard() {
               value={amountIn}
               onChange={(e) => setAmountIn(e.target.value)}
               placeholder="0"
-              className="flex-1 min-w-0 bg-transparent text-3xl font-semibold text-white outline-none placeholder-gray-600"
+              className="flex-1 min-w-0 bg-transparent text-2xl font-medium text-white outline-none placeholder-gray-600"
             />
             <button
               onClick={() => setShowTokenModal('in')}
-              className="flex items-center gap-2 bg-atlantis-700/60 hover:bg-atlantis-600/60 border border-atlantis-600/50 hover:border-primary-500/30 rounded-2xl px-3 py-2 transition-all shrink-0"
+              className="flex items-center gap-2 bg-[#252542] hover:bg-[#2d2d4a] border border-white/10 rounded-full px-3 py-2 transition-all shrink-0"
             >
               {tokenIn.logoURI ? (
-                <img src={tokenIn.logoURI} alt={tokenIn.symbol} className="w-7 h-7 rounded-full" />
+                <img src={tokenIn.logoURI} alt={tokenIn.symbol} className="w-6 h-6 rounded-full" />
               ) : (
-                <div className="w-7 h-7 bg-gradient-to-br from-primary-500/40 to-secondary-500/40 rounded-full flex items-center justify-center">
-                  <span className="text-xs font-bold">{tokenIn.symbol.slice(0, 1)}</span>
+                <div className="w-6 h-6 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-white">{tokenIn.symbol.slice(0, 1)}</span>
                 </div>
               )}
-              <span className="font-semibold text-white">{tokenIn.symbol}</span>
-              {tokenIn.isNative && <span className="text-primary-400 text-xs">⚡</span>}
+              <span className="font-semibold text-white text-sm">{tokenIn.symbol}</span>
+              {tokenIn.isNative && <span className="text-yellow-400 text-xs">⚡</span>}
               <ChevronDown className="w-4 h-4 text-gray-400" />
             </button>
           </div>
         </div>
 
         {/* Switch Button */}
-        <div className="flex justify-center -my-3 relative z-10">
+        <div className="flex justify-center -my-1 relative z-10">
           <button 
             onClick={switchTokens}
-            className="w-10 h-10 bg-atlantis-900 hover:bg-atlantis-800 border-4 border-atlantis-950 hover:border-primary-500/30 rounded-xl flex items-center justify-center transition-all duration-300 hover:shadow-glow group"
+            className="w-10 h-10 bg-[#1a1a2e] border-4 border-[#0d0d15] hover:border-purple-500/30 rounded-xl flex items-center justify-center transition-all duration-300 group"
           >
-            <ArrowDownUp className="w-4 h-4 text-gray-400 group-hover:text-primary-400 group-hover:rotate-180 transition-all duration-300" />
+            <RefreshCw className="w-4 h-4 text-purple-400 group-hover:rotate-180 transition-all duration-500" />
           </button>
         </div>
 
         {/* Buy Section */}
-        <div className="bg-atlantis-800/40 rounded-2xl p-4 border border-atlantis-700/30">
-          <div className="flex justify-between items-center mb-2">
+        <div className="bg-[#12121a] rounded-2xl p-4 border border-white/5">
+          <div className="flex justify-between items-center mb-3">
             <span className="text-sm text-gray-400">Buy</span>
             <span className="text-xs text-gray-500">Balance: {parseFloat(balanceOut).toFixed(4)}</span>
           </div>
@@ -317,21 +317,21 @@ export function SwapCard() {
               value={amountOut ? parseFloat(amountOut).toFixed(6) : ''}
               readOnly
               placeholder="0"
-              className="flex-1 min-w-0 bg-transparent text-3xl font-semibold text-white outline-none placeholder-gray-600"
+              className="flex-1 min-w-0 bg-transparent text-2xl font-medium text-white outline-none placeholder-gray-600"
             />
             <button
               onClick={() => setShowTokenModal('out')}
-              className="flex items-center gap-2 bg-atlantis-700/60 hover:bg-atlantis-600/60 border border-atlantis-600/50 hover:border-primary-500/30 rounded-2xl px-3 py-2 transition-all shrink-0"
+              className="flex items-center gap-2 bg-[#252542] hover:bg-[#2d2d4a] border border-white/10 rounded-full px-3 py-2 transition-all shrink-0"
             >
               {tokenOut.logoURI ? (
-                <img src={tokenOut.logoURI} alt={tokenOut.symbol} className="w-7 h-7 rounded-full" />
+                <img src={tokenOut.logoURI} alt={tokenOut.symbol} className="w-6 h-6 rounded-full" />
               ) : (
-                <div className="w-7 h-7 bg-gradient-to-br from-primary-500/40 to-secondary-500/40 rounded-full flex items-center justify-center">
-                  <span className="text-xs font-bold">{tokenOut.symbol.slice(0, 1)}</span>
+                <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-white">{tokenOut.symbol.slice(0, 1)}</span>
                 </div>
               )}
-              <span className="font-semibold text-white">{tokenOut.symbol}</span>
-              {tokenOut.isNative && <span className="text-primary-400 text-xs">⚡</span>}
+              <span className="font-semibold text-white text-sm">{tokenOut.symbol}</span>
+              {tokenOut.isNative && <span className="text-yellow-400 text-xs">⚡</span>}
               <ChevronDown className="w-4 h-4 text-gray-400" />
             </button>
           </div>
@@ -339,101 +339,97 @@ export function SwapCard() {
 
         {/* Wrap/Unwrap Info */}
         {isWrapOrUnwrap && amountIn && parseFloat(amountIn) > 0 && (
-          <div className="bg-primary-500/10 border border-primary-500/20 rounded-xl p-3 text-sm">
-            <div className="flex items-center gap-2 text-primary-400">
+          <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3 text-sm">
+            <div className="flex items-center gap-2 text-purple-400">
               <Info className="w-4 h-4" />
               <span>
                 {isWrapOperation 
-                  ? 'Wrapping MON to WMON (1:1 ratio, no fee)'
-                  : 'Unwrapping WMON to MON (1:1 ratio, no fee)'}
+                  ? 'Wrapping to wrapped token (1:1 ratio)'
+                  : 'Unwrapping to native token (1:1 ratio)'}
               </span>
             </div>
           </div>
         )}
 
-        {/* Rate & Details (only for swaps) */}
-        {!isWrapOrUnwrap && amountIn && amountOut && parseFloat(amountIn) > 0 && (
-          <div className="mt-3">
-            <button 
-              onClick={() => setShowDetails(!showDetails)}
-              className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
-            >
-              <span>1 {tokenIn.symbol} = {rate} {tokenOut.symbol}</span>
-              <Info className={`w-4 h-4 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {showDetails && (
-              <div className="bg-atlantis-800/30 rounded-xl p-3 space-y-2 text-sm border border-atlantis-700/20 mt-1">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Slippage Tolerance</span>
-                  <span className="text-white">{settings.slippage}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Swap Fee</span>
-                  <span className="text-white">{FEE.TOTAL_PERCENT}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Min. Received</span>
-                  <span className="text-primary-400">{(parseFloat(amountOut) * (1 - settings.slippage / 100)).toFixed(6)} {tokenOut.symbol}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Route</span>
-                  <span className="text-white">{tokenIn.symbol} → {tokenOut.symbol}</span>
-                </div>
-              </div>
+        {/* Rate & Details */}
+        {!isWrapOrUnwrap && amountIn && amountOut && parseFloat(amountIn) > 0 && showDetails && (
+          <div className="bg-[#12121a]/50 rounded-xl p-3 space-y-2 text-sm border border-white/5">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Rate</span>
+              <span className="text-white">1 {tokenIn.symbol} = {rate} {tokenOut.symbol}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Slippage</span>
+              <span className="text-white">{settings.slippage}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Fee</span>
+              <span className="text-white">{FEE.TOTAL_PERCENT}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Min. Received</span>
+              <span className="text-purple-400">{(parseFloat(amountOut) * (1 - settings.slippage / 100)).toFixed(6)} {tokenOut.symbol}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Enter Amount Button (disabled state) */}
+        {(!amountIn || parseFloat(amountIn) === 0) && (
+          <button 
+            disabled
+            className="w-full py-4 bg-[#252542]/50 rounded-2xl font-semibold text-gray-500 cursor-not-allowed border border-white/5"
+          >
+            Enter Amount
+          </button>
+        )}
+
+        {/* Action Button */}
+        {amountIn && parseFloat(amountIn) > 0 && (
+          <div className="space-y-2">
+            {!isConnected ? (
+              <button className="w-full py-4 bg-[#252542]/50 rounded-2xl font-semibold text-gray-500 cursor-not-allowed border border-white/5">
+                Connect Wallet
+              </button>
+            ) : isSameToken ? (
+              <button className="w-full py-4 bg-[#252542]/50 rounded-2xl font-semibold text-gray-500 cursor-not-allowed border border-white/5">
+                Select Different Tokens
+              </button>
+            ) : needsApproval ? (
+              <button
+                onClick={handleApprove}
+                disabled={isPending || isConfirming}
+                className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white transition-all"
+              >
+                {isPending || isConfirming ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Approving...
+                  </span>
+                ) : (
+                  `Approve ${tokenIn.symbol}`
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={handleSwap}
+                disabled={isPending || isConfirming || (!isWrapOrUnwrap && !amountOut)}
+                className="w-full py-4 bg-gradient-to-r from-[#6366f1] via-[#8b5cf6] to-[#a855f7] hover:from-[#818cf8] hover:via-[#a78bfa] hover:to-[#c084fc] disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white text-lg transition-all shadow-lg shadow-purple-500/20"
+              >
+                {isPending || isConfirming ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    {isWrapOperation ? 'Wrapping...' : isUnwrapOperation ? 'Unwrapping...' : 'Swapping...'}
+                  </span>
+                ) : (
+                  getButtonText()
+                )}
+              </button>
             )}
           </div>
         )}
 
-        {/* Action Button */}
-        <div className="pt-2">
-          {!isConnected ? (
-            <button className="w-full py-4 bg-atlantis-700/50 rounded-2xl font-semibold text-gray-400 cursor-not-allowed">
-              Connect Wallet
-            </button>
-          ) : isSameToken ? (
-            <button className="w-full py-4 bg-atlantis-700/50 rounded-2xl font-semibold text-gray-400 cursor-not-allowed">
-              Select Different Tokens
-            </button>
-          ) : !amountIn || parseFloat(amountIn) === 0 ? (
-            <button className="w-full py-4 bg-atlantis-700/50 rounded-2xl font-semibold text-gray-400 cursor-not-allowed">
-              Enter Amount
-            </button>
-          ) : needsApproval ? (
-            <button
-              onClick={handleApprove}
-              disabled={isPending || isConfirming}
-              className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white transition-all shadow-lg hover:shadow-amber-500/25"
-            >
-              {isPending || isConfirming ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Approving...
-                </span>
-              ) : (
-                `Approve ${tokenIn.symbol}`
-              )}
-            </button>
-          ) : (
-            <button
-              onClick={handleSwap}
-              disabled={isPending || isConfirming || (!isWrapOrUnwrap && !amountOut)}
-              className="w-full py-4 bg-gradient-to-r from-primary-500 to-secondary-500 hover:from-primary-400 hover:to-secondary-400 disabled:from-gray-600 disabled:to-gray-600 rounded-2xl font-bold text-white text-lg transition-all shadow-lg hover:shadow-primary-500/25"
-            >
-              {isPending || isConfirming ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {isWrapOperation ? 'Wrapping...' : isUnwrapOperation ? 'Unwrapping...' : 'Swapping...'}
-                </span>
-              ) : (
-                getButtonText()
-              )}
-            </button>
-          )}
-        </div>
-
         {isSuccess && (
-          <div className="text-center text-green-400 text-sm py-3 bg-green-500/10 rounded-xl border border-green-500/20 mt-2">
+          <div className="text-center text-green-400 text-sm py-3 bg-green-500/10 rounded-xl border border-green-500/20">
             ✓ {isWrapOperation ? 'Wrap' : isUnwrapOperation ? 'Unwrap' : 'Swap'} successful!
           </div>
         )}

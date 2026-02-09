@@ -12,7 +12,7 @@ import {
   Wallet,
   Info,
   Calculator,
-} from 'lucide-react'
+} from '../Icons3D'
 import { useQuickStaking, QUICK_STAKING_ADDRESS } from '../../hooks/useQuickStaking'
 import { ROIModal } from './ROIModal'
 import { useROICalculatorStore } from '../../store/calculatorStore'

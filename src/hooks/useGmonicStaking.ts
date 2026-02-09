@@ -1,6 +1,6 @@
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi'
 import { parseEther, formatEther } from 'viem'
-import { CONTRACTS } from '../config/contracts'
+import { getContracts, getStakingTokenName } from '../config/contracts'
 import { ERC20_ABI } from '../config/abis'
 
 // GmonicStaking ABI
@@ -105,12 +105,16 @@ export interface GmonicUserInfo {
 
 export function useGmonicStaking(poolId: number = 0) {
   const { address } = useAccount()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  const tokenInfo = getStakingTokenName(chainId)
+  
   const { writeContract, data: hash, isPending } = useWriteContract()
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
 
   // Read pool info
   const { data: poolData, refetch: refetchPool } = useReadContract({
-    address: CONTRACTS.GMONIC_STAKING,
+    address: contracts.TOKEN_STAKING,
     abi: GMONIC_STAKING_ABI,
     functionName: 'poolInfo',
     args: [BigInt(poolId)],
@@ -118,7 +122,7 @@ export function useGmonicStaking(poolId: number = 0) {
 
   // Read user info
   const { data: userInfoData, refetch: refetchUser } = useReadContract({
-    address: CONTRACTS.GMONIC_STAKING,
+    address: contracts.TOKEN_STAKING,
     abi: GMONIC_STAKING_ABI,
     functionName: 'getUserInfo',
     args: [BigInt(poolId), address!],
@@ -127,16 +131,16 @@ export function useGmonicStaking(poolId: number = 0) {
 
   // Read pending reward
   const { data: pendingRewardData, refetch: refetchReward } = useReadContract({
-    address: CONTRACTS.GMONIC_STAKING,
+    address: contracts.TOKEN_STAKING,
     abi: GMONIC_STAKING_ABI,
     functionName: 'pendingReward',
     args: [BigInt(poolId), address!],
     query: { enabled: !!address }
   })
 
-  // Read user's gMONIC balance
-  const { data: gmonicBalance, refetch: refetchBalance } = useReadContract({
-    address: CONTRACTS.GMONIC_STAKE,
+  // Read user's staking token balance
+  const { data: stakingTokenBalance, refetch: refetchBalance } = useReadContract({
+    address: contracts.TOKEN_STAKE,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: [address!],
@@ -145,10 +149,10 @@ export function useGmonicStaking(poolId: number = 0) {
 
   // Read allowance
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    address: CONTRACTS.GMONIC_STAKE,
+    address: contracts.TOKEN_STAKE,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: [address!, CONTRACTS.GMONIC_STAKING],
+    args: [address!, contracts.TOKEN_STAKING],
     query: { enabled: !!address }
   })
 
@@ -171,22 +175,22 @@ export function useGmonicStaking(poolId: number = 0) {
     pendingReward: pendingRewardData || 0n,
   } : null
 
-  // Approve gMONIC
+  // Approve staking token
   const approve = async (amount: string) => {
     const value = parseEther(amount)
     writeContract({
-      address: CONTRACTS.GMONIC_STAKE,
+      address: contracts.TOKEN_STAKE,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [CONTRACTS.GMONIC_STAKING, value],
+      args: [contracts.TOKEN_STAKING, value],
     })
   }
 
-  // Deposit gMONIC
+  // Deposit staking token
   const deposit = async (amount: string) => {
     const value = parseEther(amount)
     writeContract({
-      address: CONTRACTS.GMONIC_STAKING,
+      address: contracts.TOKEN_STAKING,
       abi: GMONIC_STAKING_ABI,
       functionName: 'deposit',
       args: [BigInt(poolId), value],
@@ -197,7 +201,7 @@ export function useGmonicStaking(poolId: number = 0) {
   const withdraw = async (amount: string) => {
     const value = parseEther(amount)
     writeContract({
-      address: CONTRACTS.GMONIC_STAKING,
+      address: contracts.TOKEN_STAKING,
       abi: GMONIC_STAKING_ABI,
       functionName: 'withdraw',
       args: [BigInt(poolId), value],
@@ -207,7 +211,7 @@ export function useGmonicStaking(poolId: number = 0) {
   // Harvest rewards
   const harvest = async () => {
     writeContract({
-      address: CONTRACTS.GMONIC_STAKING,
+      address: contracts.TOKEN_STAKING,
       abi: GMONIC_STAKING_ABI,
       functionName: 'harvest',
       args: [BigInt(poolId)],
@@ -217,7 +221,7 @@ export function useGmonicStaking(poolId: number = 0) {
   // Emergency withdraw (no rewards)
   const emergencyWithdraw = async () => {
     writeContract({
-      address: CONTRACTS.GMONIC_STAKING,
+      address: contracts.TOKEN_STAKING,
       abi: GMONIC_STAKING_ABI,
       functionName: 'emergencyWithdraw',
       args: [BigInt(poolId)],
@@ -247,8 +251,11 @@ export function useGmonicStaking(poolId: number = 0) {
   return {
     poolInfo,
     userInfo,
-    gmonicBalance,
+    stakingTokenBalance,
+    gmonicBalance: stakingTokenBalance, // backward compatibility
     allowance,
+    tokenInfo,
+    chainId,
     approve,
     deposit,
     withdraw,

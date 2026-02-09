@@ -1,7 +1,8 @@
 // hooks/usePoolRatio.ts
 // Auto-ratio calculator for liquidity pools
 import { useState, useEffect, useCallback } from 'react'
-import { SUBGRAPH_URL, CONTRACTS } from '../config/contracts'
+import { useChainId } from 'wagmi'
+import { getSubgraphUrl, getContracts } from '../config/contracts'
 import { type Token, NATIVE_ADDRESS } from '../config/tokens'
 
 interface PoolReserves {
@@ -30,18 +31,22 @@ interface UsePoolRatioResult {
  * Automatically handles token sorting (V2 pools sort by address)
  */
 export function usePoolRatio(tokenA: Token | null, tokenB: Token | null): UsePoolRatioResult {
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  const subgraphUrl = getSubgraphUrl(chainId)
+  
   const [reserves, setReserves] = useState<PoolReserves | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isTokenAFirst, setIsTokenAFirst] = useState(true)
 
-  // Get actual addresses (WMON for native MON)
-  const getActualAddress = (token: Token): string => {
+  // Get actual addresses (WETH for native)
+  const getActualAddress = useCallback((token: Token): string => {
     if (token.address === NATIVE_ADDRESS || token.isNative) {
-      return CONTRACTS.WMON.toLowerCase()
+      return contracts.WETH.toLowerCase()
     }
     return token.address.toLowerCase()
-  }
+  }, [contracts.WETH])
 
   // Fetch pool reserves from subgraph
   const fetchReserves = useCallback(async () => {
@@ -67,7 +72,7 @@ export function usePoolRatio(tokenA: Token | null, tokenB: Token | null): UsePoo
       const [token0Addr, token1Addr] = [addressA, addressB].sort()
       setIsTokenAFirst(addressA === token0Addr)
 
-      const response = await fetch(SUBGRAPH_URL, {
+      const response = await fetch(subgraphUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -106,7 +111,7 @@ export function usePoolRatio(tokenA: Token | null, tokenB: Token | null): UsePoo
     } finally {
       setLoading(false)
     }
-  }, [tokenA, tokenB])
+  }, [tokenA, tokenB, getActualAddress, subgraphUrl])
 
   // Fetch on token change
   useEffect(() => {

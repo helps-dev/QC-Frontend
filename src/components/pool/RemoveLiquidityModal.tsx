@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient } from 'wagmi'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient, useChainId } from 'wagmi'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseUnits, formatUnits } from 'viem'
-import { X, RefreshCw, Wallet } from 'lucide-react'
-import { CONTRACTS } from '../../config/contracts'
+import { X, RefreshCw, Wallet } from '../Icons3D'
+import { getContracts } from '../../config/contracts'
+import { CHAIN_IDS } from '../../config/chains'
 import { ROUTER_ABI, ERC20_ABI } from '../../config/abis'
 import { PositionData } from './PoolPage'
-
-const WMON_ADDRESS = '0x3bd359c1119da7da1d913d1c4d2b7c461115433a'
 
 // Token Icon
 function TokenIcon({ symbol, size = 24 }: { symbol: string; size?: number }) {
@@ -52,6 +51,11 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient()
   const queryClient = useQueryClient()
+  const chainId = useChainId()
+  const contracts = getContracts(chainId)
+  const wrappedNativeAddress = contracts.WETH.toLowerCase()
+  const nativeSymbol = chainId === CHAIN_IDS.MEGAETH ? 'ETH' : 'MON'
+  const wrappedSymbol = chainId === CHAIN_IDS.MEGAETH ? 'WETH' : 'WMON'
 
   const [percentage, setPercentage] = useState(100)
   const [slippage, setSlippage] = useState(10)
@@ -83,7 +87,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
     address: pairAddress,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CONTRACTS.ROUTER] : undefined,
+    args: address ? [address, contracts.ROUTER] : undefined,
     query: { enabled: !!address },
   })
 
@@ -95,8 +99,8 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
   const token0Amount = parseFloat(position.pair.reserve0) * (userLpBalance / totalSupply) * (percentage / 100)
   const token1Amount = parseFloat(position.pair.reserve1) * (userLpBalance / totalSupply) * (percentage / 100)
 
-  const isToken0WMON = position.pair.token0.id.toLowerCase() === WMON_ADDRESS
-  const isToken1WMON = position.pair.token1.id.toLowerCase() === WMON_ADDRESS
+  const isToken0WMON = position.pair.token0.id.toLowerCase() === wrappedNativeAddress
+  const isToken1WMON = position.pair.token1.id.toLowerCase() === wrappedNativeAddress
   const hasWMON = isToken0WMON || isToken1WMON
 
   const needsApproval = lpAllowance !== undefined && lpToRemoveWei > 0n && lpAllowance < lpToRemoveWei
@@ -108,7 +112,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
         address: pairAddress,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.ROUTER, parseUnits('999999999999', 18)],
+        args: [contracts.ROUTER, parseUnits('999999999999', 18)],
       })
     } catch {
       setStep('input')
@@ -132,7 +136,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
         const minETHAmount = isToken0WMON ? minAmount0 : minAmount1
 
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidityETH',
           args: [tokenAddress, lpToRemoveWei, minTokenAmount, minETHAmount, address, deadline],
@@ -140,7 +144,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidityETH',
           args: [tokenAddress, lpToRemoveWei, minTokenAmount, minETHAmount, address, deadline],
@@ -148,7 +152,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
         })
       } else {
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidity',
           args: [position.pair.token0.id as `0x${string}`, position.pair.token1.id as `0x${string}`, lpToRemoveWei, minAmount0, minAmount1, address, deadline],
@@ -156,7 +160,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidity',
           args: [position.pair.token0.id as `0x${string}`, position.pair.token1.id as `0x${string}`, lpToRemoveWei, minAmount0, minAmount1, address, deadline],
@@ -251,7 +255,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
                 <div className="flex items-center gap-2">
                   <TokenIcon symbol={position.pair.token0.symbol} size={24} />
                   <span className="text-white">{position.pair.token0.symbol}</span>
-                  {isToken0WMON && <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ MON</span>}
+                  {isToken0WMON && <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ {nativeSymbol}</span>}
                 </div>
                 <span className="text-white font-medium">{formatNum(token0Amount)}</span>
               </div>
@@ -259,7 +263,7 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
                 <div className="flex items-center gap-2">
                   <TokenIcon symbol={position.pair.token1.symbol} size={24} />
                   <span className="text-white">{position.pair.token1.symbol}</span>
-                  {isToken1WMON && <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ MON</span>}
+                  {isToken1WMON && <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ {nativeSymbol}</span>}
                 </div>
                 <span className="text-white font-medium">{formatNum(token1Amount)}</span>
               </div>
@@ -285,13 +289,13 @@ export function RemoveLiquidityModal({ position, onClose, onSuccess }: RemoveLiq
             </div>
           </div>
 
-          {/* Native MON Info */}
+          {/* Native Token Info */}
           {hasWMON && (
             <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3 flex items-start gap-2">
               <Wallet className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-purple-400 text-sm font-medium">Receive Native MON</p>
-                <p className="text-purple-300/70 text-xs">WMON will be auto-unwrapped to native MON</p>
+                <p className="text-purple-400 text-sm font-medium">Receive Native {nativeSymbol}</p>
+                <p className="text-purple-300/70 text-xs">{wrappedSymbol} will be auto-unwrapped to native {nativeSymbol}</p>
               </div>
             </div>
           )}

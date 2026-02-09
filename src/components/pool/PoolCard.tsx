@@ -1,4 +1,4 @@
-import { Eye, Plus, TrendingUp, Users, BarChart3 } from 'lucide-react'
+import { Eye, Plus, TrendingUp, Users, BarChart3 } from '../Icons3D'
 import { PoolData, calculatePoolTVL, calculatePoolVolume, formatUSD } from './PoolPage'
 
 // Token Icon Component
@@ -54,7 +54,7 @@ export function PoolCard({ pool, onAddLiquidity }: PoolCardProps) {
               {pool.token0.symbol}/{pool.token1.symbol}
             </h3>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-gray-400">V2 Pool</span>
+              <span className="text-xs text-gray-400">MexaSwap V2</span>
               <span className="text-xs px-2 py-0.5 bg-atlantis-700/50 text-gray-300 rounded-full">
                 0.5% Fee
               </span>

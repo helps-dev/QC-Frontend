@@ -1,4 +1,4 @@
-import { Plus, Minus, Eye } from 'lucide-react'
+import { Plus, Minus, Eye } from '../Icons3D'
 import { PositionData, calculatePoolTVL, formatUSD } from './PoolPage'
 
 // Token Icon Component - Responsive sizes
@@ -87,7 +87,7 @@ export function PositionCard({
               {position.pair.token0.symbol}/{position.pair.token1.symbol}
             </h3>
             <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 sm:mt-1 flex-wrap">
-              <span className="text-[10px] sm:text-xs text-gray-400">V2 Pool</span>
+              <span className="text-[10px] sm:text-xs text-gray-400">MexaSwap V2</span>
               <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-atlantis-700/50 text-gray-300 rounded-full">
                 0.5% Fee
               </span>

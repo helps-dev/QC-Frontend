@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Calculator, TrendingUp, Clock, DollarSign, Zap, Info } from 'lucide-react'
+import { Calculator, TrendingUp, Clock, DollarSign, Zap, Info } from '../Icons3D'
 
 interface ROICalculatorProps {
   stakeAmount: string

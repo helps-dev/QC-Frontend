@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, TrendingUp, TrendingDown, ExternalLink, ChevronDown, Star, Copy, Check } from 'lucide-react'
+import { Search, TrendingUp, TrendingDown, ExternalLink, ChevronDown, Star, Copy, Check } from '../Icons3D'
 import { useDexScreenerSearch, getDexScreenerChartUrl, type DexScreenerPair } from '../../hooks/useDexScreener'
 import { SwapCard } from '../SwapCard'
 

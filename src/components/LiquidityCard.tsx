@@ -6,6 +6,7 @@ import {
   useReadContract,
   useBalance,
   usePublicClient,
+  useChainId,
 } from 'wagmi'
 import { parseUnits, formatUnits } from 'viem'
 import {
@@ -20,24 +21,29 @@ import {
   TrendingUp,
   Eye,
   Zap,
-  Filter,
   BarChart3,
   Users,
   DollarSign,
   Lock,
   Unlock,
   Info,
-} from 'lucide-react'
-import { CONTRACTS, SUBGRAPH_URL } from '../config/contracts'
+  Filter,
+} from './Icons3D'
+import { getContracts, getSubgraphUrl } from '../config/contracts'
 import { ROUTER_ABI, ERC20_ABI } from '../config/abis'
 import { TokenModal } from './TokenModal'
 import { TokenImportModal } from './TokenImportModal'
-import { type Token, MON_TOKEN, QUICK_TOKEN } from '../config/tokens'
+import { type Token, getNativeToken, getGovernanceToken } from '../config/tokens'
 import { usePoolRatio } from '../hooks/usePoolRatio'
+import { getExplorerUrl, getNativeSymbol, getWrappedSymbol, CHAIN_IDS } from '../config/chains'
 
-// Constants
-const WMON_ADDRESS = CONTRACTS.WMON.toLowerCase()
+// Constants - will be set dynamically based on chain
 const MON_PRICE_USD = 0.5
+
+function getWethAddress(chainId: number): string {
+  const contracts = getContracts(chainId)
+  return contracts.WETH.toLowerCase()
+}
 
 function formatUSD(num: number): string {
   if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`
@@ -73,24 +79,28 @@ interface PositionData {
 
 interface FactoryStats {
   pairCount: string
-  totalVolumeMON: string
-  totalLiquidityMON: string
+  totalVolumeMON?: string
+  totalVolumeETH?: string
+  totalLiquidityMON?: string
+  totalLiquidityETH?: string
   txCount: string
 }
 
-function calculatePoolTVL(pool: PoolData): number {
+function calculatePoolTVL(pool: PoolData, chainId: number): number {
+  const wethAddress = getWethAddress(chainId)
   const r0 = parseFloat(pool.reserve0) || 0
   const r1 = parseFloat(pool.reserve1) || 0
-  if (pool.token0.id.toLowerCase() === WMON_ADDRESS) return r0 * 2 * MON_PRICE_USD
-  if (pool.token1.id.toLowerCase() === WMON_ADDRESS) return r1 * 2 * MON_PRICE_USD
+  if (pool.token0.id.toLowerCase() === wethAddress) return r0 * 2 * MON_PRICE_USD
+  if (pool.token1.id.toLowerCase() === wethAddress) return r1 * 2 * MON_PRICE_USD
   return (r0 + r1) * MON_PRICE_USD * 0.01
 }
 
-function calculatePoolVolume(pool: PoolData): number {
+function calculatePoolVolume(pool: PoolData, chainId: number): number {
+  const wethAddress = getWethAddress(chainId)
   const v0 = parseFloat(pool.volumeToken0) || 0
   const v1 = parseFloat(pool.volumeToken1) || 0
-  if (pool.token0.id.toLowerCase() === WMON_ADDRESS) return v0 * MON_PRICE_USD
-  if (pool.token1.id.toLowerCase() === WMON_ADDRESS) return v1 * MON_PRICE_USD
+  if (pool.token0.id.toLowerCase() === wethAddress) return v0 * MON_PRICE_USD
+  if (pool.token1.id.toLowerCase() === wethAddress) return v1 * MON_PRICE_USD
   return (v0 + v1) * MON_PRICE_USD * 0.01
 }
 
@@ -161,10 +171,10 @@ function TokenSelectorButton({
 }
 
 // ============ POOL HEADER STATS ============
-function PoolHeaderStats({ pools }: { stats: FactoryStats | null; pools: PoolData[] }) {
+function PoolHeaderStats({ pools, chainId }: { stats: FactoryStats | null; pools: PoolData[]; chainId: number }) {
   // Calculate totals from pools
-  const totalTVL = pools.reduce((acc, pool) => acc + calculatePoolTVL(pool), 0)
-  const totalVolume = pools.reduce((acc, pool) => acc + calculatePoolVolume(pool), 0)
+  const totalTVL = pools.reduce((acc, pool) => acc + calculatePoolTVL(pool, chainId), 0)
+  const totalVolume = pools.reduce((acc, pool) => acc + calculatePoolVolume(pool, chainId), 0)
   const totalFees = totalVolume * 0.005 // 0.5% fee
   const totalLPs = pools.reduce((acc, pool) => acc + parseInt(pool.liquidityProviderCount || '0'), 0)
 
@@ -218,9 +228,9 @@ function PoolHeaderStats({ pools }: { stats: FactoryStats | null; pools: PoolDat
 }
 
 // ============ POOL CARD COMPONENT ============
-function PoolCard({ pool }: { pool: PoolData }) {
-  const tvl = calculatePoolTVL(pool)
-  const volume = calculatePoolVolume(pool)
+function PoolCard({ pool, chainId }: { pool: PoolData; chainId: number }) {
+  const tvl = calculatePoolTVL(pool, chainId)
+  const volume = calculatePoolVolume(pool, chainId)
   const apr = tvl > 0 ? ((volume * 0.005 * 365) / tvl) * 100 : 0
 
   return (
@@ -232,7 +242,7 @@ function PoolCard({ pool }: { pool: PoolData }) {
             <div className="font-semibold text-white text-lg">
               {pool.token0.symbol}/{pool.token1.symbol}
             </div>
-            <div className="text-xs text-slate-400">V2 Pool • 0.5% Fee</div>
+            <div className="text-xs text-slate-400">MexaSwap V2 • 0.5% Fee</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -260,7 +270,7 @@ function PoolCard({ pool }: { pool: PoolData }) {
       {/* Actions - NO REMOVE BUTTON in All Pools view */}
       <div className="flex gap-2">
         <a
-          href={`https://monadscan.com/address/${pool.id}`}
+          href={getExplorerUrl(chainId, pool.id)}
           target="_blank"
           rel="noopener noreferrer"
           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-xl text-sm text-slate-300 hover:text-white transition-all"
@@ -278,15 +288,17 @@ function PositionCard({
   position,
   onRemove,
   onAdd,
+  chainId,
 }: {
   position: PositionData
   onRemove: (position: PositionData) => void
   onAdd?: () => void
+  chainId: number
 }) {
   const lpBalance = parseFloat(position.liquidityTokenBalance)
   const totalSupply = parseFloat(position.pair.totalSupply) || 1
   const sharePercent = (lpBalance / totalSupply) * 100
-  const tvl = calculatePoolTVL(position.pair)
+  const tvl = calculatePoolTVL(position.pair, chainId)
   const myValue = tvl * (lpBalance / totalSupply)
   const pooled0 = parseFloat(position.pair.reserve0) * (lpBalance / totalSupply)
   const pooled1 = parseFloat(position.pair.reserve1) * (lpBalance / totalSupply)
@@ -304,7 +316,7 @@ function PositionCard({
             <h3 className="font-semibold text-white text-lg">
               {position.pair.token0.symbol}/{position.pair.token1.symbol}
             </h3>
-            <span className="text-xs text-slate-400">V2 Pool</span>
+            <span className="text-xs text-slate-400">MexaSwap V2</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -357,7 +369,7 @@ function PositionCard({
           Remove
         </button>
         <a
-          href={`https://monadscan.com/address/${position.pair.id}`}
+          href={getExplorerUrl(chainId, position.pair.id)}
           target="_blank"
           rel="noopener noreferrer"
           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-slate-700/50 hover:bg-slate-600/50 rounded-xl text-sm text-slate-300 hover:text-white transition-all"
@@ -379,10 +391,18 @@ function PositionCard({
 function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient()
+  const chainId = useChainId()
+  
+  // Get chain-specific contracts and tokens
+  const contracts = getContracts(chainId)
+  const nativeToken = getNativeToken(chainId)
+  const governanceToken = getGovernanceToken(chainId)
+  const nativeSymbol = getNativeSymbol(chainId)
+  const wrappedSymbol = getWrappedSymbol(chainId)
 
-  // Token state
-  const [tokenA, setTokenA] = useState<Token>(MON_TOKEN)
-  const [tokenB, setTokenB] = useState<Token>(QUICK_TOKEN)
+  // Token state - use chain-specific defaults
+  const [tokenA, setTokenA] = useState<Token>(nativeToken)
+  const [tokenB, setTokenB] = useState<Token>(governanceToken)
   const [amountA, setAmountA] = useState('')
   const [amountB, setAmountB] = useState('')
   const [slippage, setSlippage] = useState(10)
@@ -437,7 +457,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
     address: tokenA.address,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CONTRACTS.ROUTER] : undefined,
+    args: address ? [address, contracts.ROUTER] : undefined,
     query: { enabled: !!address && !tokenA.isNative },
   })
 
@@ -445,7 +465,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
     address: tokenB.address,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CONTRACTS.ROUTER] : undefined,
+    args: address ? [address, contracts.ROUTER] : undefined,
     query: { enabled: !!address && !tokenB.isNative },
   })
 
@@ -553,7 +573,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
         address: tokenA.address,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.ROUTER, parseUnits('999999999', tokenA.decimals)],
+        args: [contracts.ROUTER, parseUnits('999999999', tokenA.decimals)],
       })
     } catch (err) {
       console.error('Approve A failed:', err)
@@ -569,7 +589,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
         address: tokenB.address,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.ROUTER, parseUnits('999999999', tokenB.decimals)],
+        args: [contracts.ROUTER, parseUnits('999999999', tokenB.decimals)],
       })
     } catch (err) {
       console.error('Approve B failed:', err)
@@ -577,7 +597,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
     }
   }
 
-  // Add Liquidity - handles both native MON and ERC20
+  // Add Liquidity - handles both native and ERC20
   const addLiquidity = async () => {
     if (!address || !amountA || !amountB || !publicClient) return
     setStep('add')
@@ -585,13 +605,13 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200)
     const slipMult = BigInt(100 - slippage)
 
-    // Check if either token is native MON
+    // Check if either token is native
     const isTokenANative = tokenA.isNative
     const isTokenBNative = tokenB.isNative
 
     try {
       if (isTokenANative || isTokenBNative) {
-        // Use addLiquidityETH for native MON
+        // Use addLiquidityETH for native token
         const nativeAmount = isTokenANative ? amtAWei : amtBWei
         const tokenAmount = isTokenANative ? amtBWei : amtAWei
         const tokenAddress = isTokenANative ? tokenB.address : tokenA.address
@@ -600,7 +620,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
 
         // Estimate gas first
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidityETH',
           args: [tokenAddress, tokenAmount, minToken, minETH, address, deadline],
@@ -609,7 +629,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidityETH',
           args: [tokenAddress, tokenAmount, minToken, minETH, address, deadline],
@@ -619,7 +639,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
       } else {
         // Standard addLiquidity for ERC20 pairs
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidity',
           args: [
@@ -636,7 +656,7 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'addLiquidity',
           args: [
@@ -856,11 +876,11 @@ function AddLiquidityModal({ onClose, onSuccess }: { onClose: () => void; onSucc
               <span className="text-white text-xs font-medium">0.5% (0.4% LP + 0.1% Protocol)</span>
             </div>
 
-            {/* Native MON Info - Compact */}
+            {/* Native Token Info - Compact */}
             {(tokenA.isNative || tokenB.isNative) && (
               <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-2 flex items-center gap-2">
                 <Wallet className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <p className="text-purple-400 text-xs">MON will auto-wrap to WMON</p>
+                <p className="text-purple-400 text-xs">{nativeSymbol} will auto-wrap to {wrappedSymbol}</p>
               </div>
             )}
 
@@ -965,6 +985,12 @@ function RemoveLiquidityModal({
 }) {
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient()
+  const chainId = useChainId()
+  
+  // Get chain-specific contracts
+  const contracts = getContracts(chainId)
+  const wethAddress = getWethAddress(chainId)
+  const nativeSymbol = getNativeSymbol(chainId)
 
   const [percentage, setPercentage] = useState(100)
   const [slippage, setSlippage] = useState(10)
@@ -989,7 +1015,7 @@ function RemoveLiquidityModal({
     address: pairAddress,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, CONTRACTS.ROUTER] : undefined,
+    args: address ? [address, contracts.ROUTER] : undefined,
     query: { enabled: !!address && !!pairAddress },
   })
 
@@ -1003,10 +1029,10 @@ function RemoveLiquidityModal({
   const token0Amount = parseFloat(position.pair.reserve0) * (userLpBalance / totalSupply) * (percentage / 100)
   const token1Amount = parseFloat(position.pair.reserve1) * (userLpBalance / totalSupply) * (percentage / 100)
 
-  // Check if one of the tokens is WMON (for native ETH withdrawal)
-  const isToken0WMON = position.pair.token0.id.toLowerCase() === WMON_ADDRESS
-  const isToken1WMON = position.pair.token1.id.toLowerCase() === WMON_ADDRESS
-  const hasWMON = isToken0WMON || isToken1WMON
+  // Check if one of the tokens is WETH (for native withdrawal)
+  const isToken0WETH = position.pair.token0.id.toLowerCase() === wethAddress
+  const isToken1WETH = position.pair.token1.id.toLowerCase() === wethAddress
+  const hasWETH = isToken0WETH || isToken1WETH
 
   // Check if approval is needed
   const needsApproval = lpAllowance !== undefined && lpToRemoveWei > 0n && lpAllowance < lpToRemoveWei
@@ -1020,7 +1046,7 @@ function RemoveLiquidityModal({
         address: pairAddress,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.ROUTER, parseUnits('999999999999', 18)],
+        args: [contracts.ROUTER, parseUnits('999999999999', 18)],
       })
     } catch (err) {
       console.error('Approve LP failed:', err)
@@ -1040,16 +1066,16 @@ function RemoveLiquidityModal({
     const minAmount1 = (parseUnits(token1Amount.toFixed(18), 18) * slipMult) / 100n
 
     try {
-      if (hasWMON) {
-        // Use removeLiquidityETH to get native MON back
-        const tokenAddress = isToken0WMON
+      if (hasWETH) {
+        // Use removeLiquidityETH to get native token back
+        const tokenAddress = isToken0WETH
           ? (position.pair.token1.id as `0x${string}`)
           : (position.pair.token0.id as `0x${string}`)
-        const minTokenAmount = isToken0WMON ? minAmount1 : minAmount0
-        const minETHAmount = isToken0WMON ? minAmount0 : minAmount1
+        const minTokenAmount = isToken0WETH ? minAmount1 : minAmount0
+        const minETHAmount = isToken0WETH ? minAmount0 : minAmount1
 
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidityETH',
           args: [tokenAddress, lpToRemoveWei, minTokenAmount, minETHAmount, address, deadline],
@@ -1057,7 +1083,7 @@ function RemoveLiquidityModal({
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidityETH',
           args: [tokenAddress, lpToRemoveWei, minTokenAmount, minETHAmount, address, deadline],
@@ -1066,7 +1092,7 @@ function RemoveLiquidityModal({
       } else {
         // Standard removeLiquidity for ERC20 pairs
         const gasEstimate = await publicClient.estimateContractGas({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidity',
           args: [
@@ -1082,7 +1108,7 @@ function RemoveLiquidityModal({
         })
 
         writeContract({
-          address: CONTRACTS.ROUTER,
+          address: contracts.ROUTER,
           abi: ROUTER_ABI,
           functionName: 'removeLiquidity',
           args: [
@@ -1185,8 +1211,8 @@ function RemoveLiquidityModal({
                 <div className="flex items-center gap-2">
                   <TokenIcon symbol={position.pair.token0.symbol} size={24} />
                   <span className="text-white">{position.pair.token0.symbol}</span>
-                  {isToken0WMON && (
-                    <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ MON</span>
+                  {isToken0WETH && (
+                    <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ {nativeSymbol}</span>
                   )}
                 </div>
                 <span className="text-white font-medium">{formatNum(token0Amount)}</span>
@@ -1195,8 +1221,8 @@ function RemoveLiquidityModal({
                 <div className="flex items-center gap-2">
                   <TokenIcon symbol={position.pair.token1.symbol} size={24} />
                   <span className="text-white">{position.pair.token1.symbol}</span>
-                  {isToken1WMON && (
-                    <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ MON</span>
+                  {isToken1WETH && (
+                    <span className="text-[10px] px-1 py-0.5 bg-purple-500/30 text-purple-300 rounded">→ {nativeSymbol}</span>
                   )}
                 </div>
                 <span className="text-white font-medium">{formatNum(token1Amount)}</span>
@@ -1227,13 +1253,13 @@ function RemoveLiquidityModal({
             </div>
           </div>
 
-          {/* Native MON Info */}
-          {hasWMON && (
+          {/* Native Token Info */}
+          {hasWETH && (
             <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-3 flex items-start gap-2">
               <Wallet className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-purple-400 text-sm font-medium">Receive Native MON</p>
-                <p className="text-purple-300/70 text-xs">WMON will be auto-unwrapped to native MON</p>
+                <p className="text-purple-400 text-sm font-medium">Receive Native {nativeSymbol}</p>
+                <p className="text-purple-300/70 text-xs">Wrapped token will be auto-unwrapped to native {nativeSymbol}</p>
               </div>
             </div>
           )}
@@ -1288,6 +1314,7 @@ function RemoveLiquidityModal({
 // ============ MAIN LIQUIDITY CARD COMPONENT ============
 export function LiquidityCard() {
   const { address, isConnected } = useAccount()
+  const chainId = useChainId()
   const [activeTab, setActiveTab] = useState<'pools' | 'positions'>('positions')
   const [pools, setPools] = useState<PoolData[]>([])
   const [positions, setPositions] = useState<PositionData[]>([])
@@ -1296,19 +1323,26 @@ export function LiquidityCard() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showRemoveModal, setShowRemoveModal] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<PositionData | null>(null)
+  
+  // Get chain-specific subgraph URL
+  const subgraphUrl = getSubgraphUrl(chainId)
 
   // Fetch factory stats
   const fetchFactoryStats = useCallback(async () => {
+    if (!subgraphUrl) return
+    const isETH = chainId === CHAIN_IDS.MEGAETH
+    const volumeField = isETH ? 'totalVolumeETH' : 'totalVolumeMON'
+    const liquidityField = isETH ? 'totalLiquidityETH' : 'totalLiquidityMON'
     try {
-      const response = await fetch(SUBGRAPH_URL, {
+      const response = await fetch(subgraphUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: `{
             factories(first: 1) {
               pairCount
-              totalVolumeMON
-              totalLiquidityMON
+              ${volumeField}
+              ${liquidityField}
               txCount
             }
           }`,
@@ -1321,12 +1355,13 @@ export function LiquidityCard() {
     } catch (err) {
       console.error('Failed to fetch factory stats:', err)
     }
-  }, [])
+  }, [subgraphUrl, chainId])
 
   // Fetch pools from subgraph
   const fetchPools = useCallback(async () => {
+    if (!subgraphUrl) return
     try {
-      const response = await fetch(SUBGRAPH_URL, {
+      const response = await fetch(subgraphUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1353,17 +1388,17 @@ export function LiquidityCard() {
     } catch (err) {
       console.error('Failed to fetch pools:', err)
     }
-  }, [])
+  }, [subgraphUrl])
 
   // Fetch user positions from subgraph
   const fetchPositions = useCallback(async () => {
-    if (!address) {
+    if (!address || !subgraphUrl) {
       setPositions([])
       return
     }
 
     try {
-      const response = await fetch(SUBGRAPH_URL, {
+      const response = await fetch(subgraphUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1393,7 +1428,7 @@ export function LiquidityCard() {
     } catch (err) {
       console.error('Failed to fetch positions:', err)
     }
-  }, [address])
+  }, [address, subgraphUrl])
 
   // Initial fetch
   useEffect(() => {
@@ -1436,7 +1471,7 @@ export function LiquidityCard() {
       </div>
 
       {/* Stats Cards */}
-      <PoolHeaderStats stats={factoryStats} pools={pools} />
+      <PoolHeaderStats stats={factoryStats} pools={pools} chainId={chainId} />
 
       {/* Tabs & Filter */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
@@ -1493,6 +1528,7 @@ export function LiquidityCard() {
                 position={position}
                 onRemove={handleRemoveFromPosition}
                 onAdd={() => setShowAddModal(true)}
+                chainId={chainId}
               />
             ))
           ) : (
@@ -1509,7 +1545,7 @@ export function LiquidityCard() {
             </div>
           )
         ) : pools.length > 0 ? (
-          pools.map((pool) => <PoolCard key={pool.id} pool={pool} />)
+          pools.map((pool) => <PoolCard key={pool.id} pool={pool} chainId={chainId} />)
         ) : (
           <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-12 text-center border border-slate-700/50">
             <Layers className="w-16 h-16 text-slate-600 mx-auto mb-3" />
